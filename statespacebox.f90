@@ -691,6 +691,52 @@ CONTAINS
 
   END SUBROUTINE disturbancesmootherA3B3C3NANscalar
 
+! @\newpage\subsection{samplerA3B3C3}@
+  SUBROUTINE samplerA3B3C3(xdraw,xshockdraw,y,T,Ny,Nx,Nw,A,B,C,Ex0,sqrtVx0,VSLstream,status)
+
+    INTENT(OUT) :: xdraw,xshockdraw,status
+    INTENT(IN) :: y,Ny,Nx,Nw,T,A,B,C,Ex0,sqrtVx0
+    INTENT(INOUT) :: VSLstream
+
+    TYPE (vsl_stream_state) :: VSLstream
+    INTEGER :: T,Ny,Nx,Nw,status
+
+    DOUBLE PRECISION, DIMENSION(Nx,Nx,T) :: A
+    DOUBLE PRECISION, DIMENSION(Nx,Nw,T) :: B
+    DOUBLE PRECISION, DIMENSION(Ny,Nx,T) :: C
+
+    DOUBLE PRECISION, DIMENSION(Nx) :: Ex0, xNull
+    DOUBLE PRECISION, DIMENSION(Nx,NX) :: sqrtVx0, Vx0
+
+    DOUBLE PRECISION, DIMENSION(Nx,0:T) :: xdraw, xhat
+    DOUBLE PRECISION, DIMENSION(Nx,T)   :: xshockdraw, xshockhat
+    DOUBLE PRECISION, DIMENSION(Ny,1:T) :: y, ydraw, dummyNoise, dummyNoiseVar
+
+    ! double precision :: xhat2(Nx,0:T), xshockhat2(Nx,T) ,ynoisehat2(Ny,T),ydraw2(Ny,T)
+
+    ! 1) generate plus data
+    call simA3B3C3(ydraw,xdraw,xshockdraw,T,Ny,Nx,Nw,A,B,C,Ex0,sqrtVx0,VSLstream)
+    ydraw = ydraw - y
+
+    ! 2) filter the difference
+    Vx0 = 0.0d0
+    call DSYRK('U','N',Nx,Nx,1.0d0,sqrtVx0,Nx,0.0d0,Vx0,Nx)
+    ! mean adjustment since projecting onto ydraw - y
+    xNull = 0.0d0
+
+    ! call disturbancesmootherA3B3C3beta(xhat,xshockhat,ydraw,T,Ny,Nx,Nw,A,B,C,xNull,Vx0,status)
+
+    dummyNoiseVar = 0.0d0
+    call disturbancesmootherA3B3C3scalar(xhat,xshockhat,dummynoise,ydraw,T,Ny,Nx,Nw,A,B,C,dummyNoiseVar,xNull,Vx0,status)
+
+    if (status == 0) then
+       ! 3) adjust draws
+       xdraw = xdraw - xhat
+       xshockdraw = xshockdraw - xshockhat
+    end if
+
+  END SUBROUTINE samplerA3B3C3
+
   ! @\newpage\subsection{samplerA3B3C3nanscalar}@
   SUBROUTINE samplerA3B3C3nanscalar(xdraw,xshockdraw,SigmaStarT,y,yNaN,T,Ny,Nx,Nw,A,B,C,Ex0,sqrtVx0,VSLstream,status)
 
