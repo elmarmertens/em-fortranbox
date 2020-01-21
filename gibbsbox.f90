@@ -1263,6 +1263,117 @@ CONTAINS
 
   END SUBROUTINE bayesregcholeskidiffuse
 
+  ! @\newpage\subsection{SVHrwcor}@
+  SUBROUTINE SVHrwcor(T, Nsv, SVol, h, hshock, y, sqrtVhshock, Eh0, sqrtVh0, VSLstream)
+
+    ! h = log(SVol ** 2)
+
+    INTENT(INOUT) :: SVol, VSLstream, y
+    INTENT(IN) :: T,Nsv, sqrtVhshock, Eh0, sqrtVh0
+    INTENT(OUT) :: hshock, h
+
+    INTEGER :: s, j, k, T, Nsv,  errcode
+    DOUBLE PRECISION :: sqrtVhshock(Nsv,Nsv), Eh0(Nsv), sqrtVh0(Nsv,Nsv)
+    INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
+    TYPE (vsl_stream_state) :: VSLstream
+
+    ! KSC mixture
+    INTEGER, PARAMETER :: KSCmix = 7
+    DOUBLE PRECISION, DIMENSION(KSCmix), PARAMETER :: KSCmean = - 1.2704d0 + (/ -10.12999d0, -3.97281d0, -8.56686d0, 2.77786d0, .61942d0, 1.79518d0, -1.08819d0 /), KSCvar     = (/ 5.79596d0, 2.61369d0, 5.1795d0, .16735d0, .64009d0, .34023d0, 1.26261d0 /), KSCpdf= (/ .0073d0, .10556d0, .00002d0, .04395d0, .34001d0, .24566d0, .25750d0 /), KSCvol = sqrt(KSCvar)
+    DOUBLE PRECISION, DIMENSION(Nsv,T,KSCmix) :: kai2CDF
+    INTEGER, DIMENSION(Nsv,T) :: kai2states
+
+
+    DOUBLE PRECISION, DIMENSION(Nsv,T) :: y, logy2, logy2star, volnoisemix, u
+    DOUBLE PRECISION, DIMENSION(Nsv,0:T) :: h, SVol
+    DOUBLE PRECISION, DIMENSION(Nsv,1:T) :: hshock
+
+    ! state space matrices
+    DOUBLE PRECISION :: A(Nsv,Nsv,T), B(Nsv,Nsv,T), C(Nsv,Nsv,T), y2noise(Nsv,T), State(Nsv,0:T), StateShock(Nsv,1:T), sqrtState0V(Nsv,Nsv), State0(Nsv)
+
+    ! log-linear observer
+    logy2 = log(y ** 2 + 0.001d0)
+    h     = 2.0d0 * log(SVol) ! TODO: make this INOUT? Need to update PREV_ storage in sampler ...
+
+    ! PART 2, STEP 1: DRAW KAI2STATES
+    ! a) construct PDF for draws (stored in kai2CDF)
+    FORALL (s=1:KSCmix,k=1:Nsv,j=1:T)
+       kai2CDF(k,j,s) = exp(-0.5d0 * ((logy2(k,j) - h(k,j) - KSCmean(s)) / KSCvol(s))** 2) / KSCvol(s) * KSCpdf(s)
+    END FORALL
+
+    ! b) convert PDF into CDF for draws
+    DO s=2,KSCmix
+       kai2CDF(:,:,s) = kai2CDF(:,:,s-1) + kai2CDF(:,:,s)
+    END DO
+    DO s=1,KSCmix-1
+       kai2CDF(:,:,s) = kai2CDF(:,:,s) / kai2CDF(:,:,KSCmix)
+    END DO
+    kai2CDF(:,:,KSCmix) = 1.0d0
+
+
+    ! c) draw kai2states
+    errcode = vdrnguniform(VSLmethodUniform, VSLstream, Nsv * T, u, 0.0d0, 1.0d0 )
+    FORALL (k=1:Nsv,j=1:T)
+       kai2states(k,j) = COUNT(u(k,j) > kai2CDF(k,j,:)) + 1
+    END FORALL
+
+
+    ! PART 2, STEP 2: KALMAN FILTER FOR h
+
+    ! prepare initial trend variance and noise variance
+    FORALL (k=1:Nsv,j=1:T)
+       volnoisemix(k,j) = KSCvol(kai2states(k,j))
+    END FORALL
+
+    ! demeaned observables 
+    FORALL(k=1:Nsv,j=1:T)
+       logy2star(k,j) = logy2(k,j) - KSCmean(kai2states(k,j))
+    END FORALL
+
+    ! state space matrices
+    A = 0.0d0
+    FORALL(k=1:Nsv,j=1:T) A(k,k,j) = 1.0d0
+
+    B = 0.0d0
+    FORALL(j=1:T) B(1:Nsv,1:Nsv,j) = sqrtVhshock
+
+    C = 0.0d0
+    FORALL(k=1:Nsv,j=1:T) C(k,k,j) = 1.0d0
+
+    ! todo: clean out redundancy with State0 sqrtState0V
+    State0 = Eh0
+    sqrtState0V = sqrtVh0
+
+    CALL samplerA3B3C3noise(State,StateShock,y2noise,logy2star,T,Nsv,Nsv,Nsv,A,B,C,volnoisemix,State0,sqrtState0V,VSLstream,errcode)
+    if (errcode /= 0) then
+       print *, 'something off with KSCvec sampler', errcode
+       stop 1
+    end if
+
+    ! ! debug
+    ! call savemat(A(:,:,1), 'A.debug')
+    ! call savemat(B(:,:,1), 'B.debug')
+    ! call savemat(C(:,:,1), 'C.debug')
+    ! call savemat(State, 'State.debug')
+    ! call savemat(StateShock, 'StateShock.debug')
+    ! call savevec(State0, 'State0.debug')
+    ! call savemat(sqrtState0V, 'sqrtState0V.debug')
+    ! call savemat(logy2star, 'logy2star.debug')
+    ! call savemat(volnoisemix, 'volnoisemix.debug')
+    ! print *, 'rho', rho
+    ! stop 33
+
+    ! again: get rid of redundancy
+    h      = State(1:Nsv,:)
+    hshock = StateShock(1:Nsv,:) 
+
+    SVol   = exp(h * 0.5d0)
+
+
+
+  END SUBROUTINE SVHrwcor
+
+
   ! @\newpage\subsection{SVHdiffusecholeskiKSC}@
   SUBROUTINE SVHdiffusecholeskiKSC(T, Ny, SVol, h, shockslopes, Nslopes, y, hInno, E0h, V0h, VSLstream)
 
