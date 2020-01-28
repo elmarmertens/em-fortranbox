@@ -2523,6 +2523,37 @@ CONTAINS
 
   END SUBROUTINE bayesAR1SUR
 
+  SUBROUTINE minnesotaVCVsqrt(sqrtVf0, N, p, lambda1, lambda2)
+
+    integer, intent(in) :: N, p
+    double precision, intent(inout), dimension(N*N*p,N*N*p) :: sqrtVf0
+    double precision, intent(in) :: lambda1, lambda2
+
+    integer :: ndxVec, ndxLHS = 1, ndxLag = 1, ndxRHS = 1
+    integer :: Nf
+
+    Nf = N * N * p
+    sqrtVf0 = 0.0d0
+
+    ndxVec = 0
+    do ndxLHS = 1,N
+       do ndxLag = 1,p
+          do ndxRHS = 1,N
+
+             ndxVec = ndxVec + 1
+
+             if (ndxLHS == ndxRHS) then
+                sqrtVf0(ndxVec,ndxVec) = lambda1 / dble(ndxLag)
+             else
+                sqrtVf0(ndxVec,ndxVec) = lambda1 * lambda2 / dble(ndxLag)
+             end if
+
+          end do
+       end do
+    end do
+
+  END SUBROUTINE minnesotaVCVsqrt
+
   ! @\newpage\subsection{bayesVARbarshock}@
   SUBROUTINE bayesVARbarshock(bdraw, Y, p, Ydata, Ny, T, ebar, iSigmaResid, b0, V0i, VSLstream)
     ! Bayesian VAR (assuming no constant)
@@ -3112,6 +3143,120 @@ CONTAINS
 
   END SUBROUTINE bayesdiffuseVARSV
 
+  ! @\newpage\subsection{bayesVARZSV}@
+  SUBROUTINE bayesVARZSV(bdraw, Y, p, Ydata, Ny, T, Z, Nz, iSigmaResid, b0, V0i, VSLstream)
+    ! Bayesian VAR with (known) Time-varying Volatility
+    ! note: iSigmaResid is (Ny,Ny,T) and assumed upper triangular
+    ! (assuming no constant)
+    ! on exit, Y returns residuals Y - X * reshape(bdraw, Nx, Ny)
+    ! notice: top rows of companion have transpose(reshape(bdraw,Nx,Ny)) 
+
+    INTENT(IN) :: Ydata, Ny, p, T, iSigmaResid, b0, V0i
+    INTENT(IN) :: Z, Nz
+    INTENT(OUT) :: Y, bdraw
+    INTENT(INOUT) :: VSLstream
+    INTEGER :: T, Ny, status, Nb, j, p
+    INTEGER :: Nz 
+    INTEGER :: Nx ! = (Ny * p + Nz)
+    DOUBLE PRECISION, DIMENSION(Ny * (Ny * p + Nz), Ny *(Ny * p + Nz)) :: V0i, Vi
+    DOUBLE PRECISION, DIMENSION(Ny * (Ny * p + Nz)) ::    b, b0, bdraw
+    DOUBLE PRECISION :: iSigmaResid(Ny,Ny,T), Y(T,Ny), Ytilde(T,Ny), Ydata(-(p-1):T,Ny), X(T,Ny * p + Nz), XX(Ny * p + Nz, Ny * p + Nz), XY(Ny * p + Nz, Ny)
+    DOUBLE PRECISION :: Z(T,Nz) ! note: length T, not Tdata
+    INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
+    TYPE (vsl_stream_state) :: VSLstream
+
+    ! STEP 1: construct regressors
+
+
+    Y  = Ydata(1:T,:)
+    Nx = Ny * p + Nz
+    Nb = Ny * Nx
+    ! collect lags of Ydata
+    FORALL (j = 1:p) X(:, ((j-1) * Ny + 1) : ((j-1) * Ny + Ny) ) = Ydata(-(j-1):T-j,:)
+    ! collect exogenous regressors
+    X(:,Ny * p + 1 : Nx) = z
+
+
+    ! STEP 2: estimate VAR coefficients: beta = inv(XX) * Xy
+    ! construct Ytilde(t) = iSigmaResid(t) Y(t)
+    Ytilde = 0.0d0
+    DO j = 1, T
+       call dsymv('U', Ny, 1.0d0, iSigmaResid(:,:,j), Ny, Y(j,:), 1, 0.0d0, Ytilde(j,:), 1)
+    END DO
+
+    ! XY = sum_t {X(t) Ytilde(t)'}
+    call DGEMM('T', 'N', Nx, Ny, T, 1.0d0, X, T, Ytilde, T, 0.0d0, XY, Nx)
+    ! store vec(XY) in b
+    call vec(b,XY)
+
+    ! b = V0i * b0 + b 
+    ! (b is not yet complete, need to multiply by posterior Variance, see below)
+    call DSYMV('U', Nb, 1.0d0, V0i, Nb, b0, 1, 1.0d0, b, 1)
+
+    ! POSTERIOR VARIANCE
+    ! Vi = V0i + sum_t kron(iSigmaResid(t), X(t) X(t)')
+
+    Vi = V0i
+    DO j = 1, T
+
+       XX = 0.0d0
+       call DSYR('U',Nx,1.0d0,X(j,:),1,XX,Nx)
+       call symmetric(XX) ! important for symkronecker
+       call symkronecker(1.0d0,iSigmaResid(:,:,j),Ny,XX,Nx,1.0d0,Vi)
+    END DO
+
+
+
+
+    ! Solve for posterior mean
+    ! solve: Vi * b = ...
+    ! 1) Choleski factorization
+    call dpotrf('u', Nb, Vi, Nb, status)
+    if (status /= 0) then
+       write(*,*) 'CHOLESKI ERROR:', status, ' [BAYESVAR]'
+
+       ! do j=1,T
+
+       ! end do
+
+
+       call savemat(V0i, 'V0i.dat.debug') ! debug
+       call savemat(Vi, 'Vi.dat.debug') ! debug
+       call savevec(b0, 'b0.dat.debug') ! debug
+       call savevec(b, 'b.dat.debug') ! debug
+       call savemat(X, 'X.dat.debug') ! debug
+       call savemat(Y, 'Y.dat.debug') ! debug
+
+
+       stop 1
+    end if
+
+    ! zero out lower triangular
+    forall (j = 1 : Nb-1) Vi(j+1:Nb,j) = 0.0d0
+
+    ! 2) solve Vi * b = z
+    call DPOTRS('U', Nb, 1, Vi, Nb, b, Nb, status)
+    if (status /= 0) then
+       write(*,*) 'DPOTRS error: ', status, ' [BAYESVAR]'
+       stop 1
+    end if
+
+    ! DRAW FROM POSTERIOR with mean b and inverse variance Vi 
+    ! notice: I am not scaling the draw)' * chol(Vi), i.e. chol is upper triangular)
+    status  = vdrnggaussian(VSLmethodGaussian, VSLstream, Nb, bdraw, 0.0d0, 1.0d0)
+    call DTRSV('U', 'N', 'N', Nb, Vi, Nb, bdraw, 1)
+
+    ! add posterior mean
+    bdraw = bdraw + b
+
+    ! resid = Y - X * reshape(beta, Nx, Ny)
+    ! note: DGEMM does not care about explicitly reshaping beta
+    call DGEMM('N','N',T,Ny,Nx,-1.0d0,X,T,bdraw,Nx,1.0d0,Y,T)
+
+
+  END SUBROUTINE bayesVARZSV
+
+
   ! @\newpage\subsection{VARmaxroot}@
   SUBROUTINE VARmaxroot(maxlambda, beta, Ny, p)
 
@@ -3247,7 +3392,7 @@ CONTAINS
     INTENT(OUT)   :: beta, sigma
     INTENT(INOUT) :: VSLstream
     LOGICAL, INTENT(IN), OPTIONAL :: ischol
-    
+
     INTEGER :: Nbeta
     INTEGER :: dof ! in principle: could also be REAL, but keeping with rest of code, assume integer valued Nobs
     DOUBLE PRECISION :: Ebeta(Nbeta), invVbeta(Nbeta,Nbeta), cholinvVbeta(Nbeta,Nbeta)
@@ -3255,9 +3400,9 @@ CONTAINS
     DOUBLE PRECISION :: ssr
 
     logical :: dochol
-    
+
     INTEGER :: errcode
-    
+
     INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
     type (vsl_stream_state) :: VSLstream
 
@@ -3307,7 +3452,7 @@ CONTAINS
   SUBROUTINE normalgammadraws(Nbeta, Ndraw, beta, sigma, Ebeta, invVbeta, ssr, dof, VSLstream, ischol)
 
     ! Ndraws from normalgamma; with Ndraws different parameters (except dof)
-    
+
     ! draw parameters beta and invsigma2 from normal-gamma
     ! sigma is 1 / (sqrt(Gamma(ssr/2, dof/2))
     ! beta | sigma is N(Ebeta, (invVbeta)^(-1) * sigma^2)
@@ -3318,7 +3463,7 @@ CONTAINS
     INTENT(OUT)   :: beta, sigma
     INTENT(INOUT) :: VSLstream
     LOGICAL, INTENT(IN), OPTIONAL :: ischol
-    
+
     INTEGER :: Nbeta, Ndraw
     INTEGER :: dof ! in principle: could also be REAL, but keeping with rest of code, assume integer valued Nobs
     DOUBLE PRECISION :: Ebeta(Nbeta,Ndraw), invVbeta(Nbeta,Nbeta,Ndraw), cholinvVbeta(Nbeta,Nbeta)
@@ -3326,9 +3471,9 @@ CONTAINS
     DOUBLE PRECISION :: ssr(Ndraw)
 
     logical :: dochol
-    
+
     INTEGER :: n, errcode
-    
+
     INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
     type (vsl_stream_state) :: VSLstream
 
@@ -3341,7 +3486,7 @@ CONTAINS
     ! draw invsigma2 from gamma -- exploiting scalability property
     errcode = vdrnggamma(VSL_RNG_METHOD_GAMMA_GNORM_ACCURATE, VSLstream, Ndraw, sigma, dble(dof - 1) * 0.5d0, 0.0d0, 1.0d0)
     sigma = sigma * 2.0d0 / ssr
-    
+
     ! Notes:
     ! - ifort uses inverse of "beta" as used in wiki notation (i.e. "theta" in wikipedia)
     ! - "alpha" corresponds to (dof-1) / 2
@@ -3377,14 +3522,14 @@ CONTAINS
 
     ! add mean and scale by sigma
     forall (n=1:Ndraw) beta(:,n) = Ebeta(:,n) + sigma(n) * beta(:,n)     
-    
+
   END SUBROUTINE normalgammadraws
 
   ! @\newpage\subsection{NormalGammaDrawsUnivariate}@
   SUBROUTINE normalgammadrawsunivariate(Ndraw, beta, sigma, Ebeta, invVbeta, ssr, dof, VSLstream, ischol)
 
     ! Ndraws from normalgamma; with Ndraws different parameters (except dof)
-    
+
     ! draw parameters beta and invsigma2 from normal-gamma
     ! sigma is 1 / (sqrt(Gamma(ssr/2, dof/2))
     ! beta | sigma is N(Ebeta, (invVbeta)^(-1) * sigma^2)
@@ -3395,7 +3540,7 @@ CONTAINS
     INTENT(OUT)   :: beta, sigma
     INTENT(INOUT) :: VSLstream
     LOGICAL, INTENT(IN), OPTIONAL :: ischol
-    
+
     INTEGER :: Ndraw
     INTEGER :: dof ! in principle: could also be REAL, but keeping with rest of code, assume integer valued Nobs
     DOUBLE PRECISION :: Ebeta(Ndraw), invVbeta(Ndraw), sqrtVbeta(Ndraw)
@@ -3403,9 +3548,9 @@ CONTAINS
     DOUBLE PRECISION :: ssr(Ndraw)
 
     logical :: dochol
-    
+
     INTEGER :: n, errcode
-    
+
     INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
     type (vsl_stream_state) :: VSLstream
 
@@ -3418,7 +3563,7 @@ CONTAINS
     ! draw invsigma2 from gamma -- exploiting scalability property
     errcode = vdrnggamma(VSL_RNG_METHOD_GAMMA_GNORM_ACCURATE, VSLstream, Ndraw, sigma, dble(dof - 1) * 0.5d0, 0.0d0, 1.0d0)
     sigma = sigma * 2.0d0 / ssr
-    
+
     ! Notes:
     ! - ifort uses inverse of "beta" as used in wiki notation (i.e. "theta" in wikipedia)
     ! - "alpha" corresponds to (dof-1) / 2
@@ -3438,7 +3583,7 @@ CONTAINS
     errcode = vdrnggaussian(VSLmethodGaussian, VSLstream, Ndraw, beta, 0.0d0, 1.0d0)
     ! add mean and scale by sigma
     forall (n=1:Ndraw) beta(n) = Ebeta(n) + sigma(n) * sqrtVbeta(N) * beta(n)     
-    
+
   END SUBROUTINE normalgammadrawsunivariate
 
   ! @\newpage\subsection{NormalGammaUpdate}@
@@ -3451,7 +3596,7 @@ CONTAINS
     INTENT(IN)    :: T, Nx, y, X
     INTENT(INOUT) :: b, iV, ssr, dof
     LOGICAL, INTENT(IN), OPTIONAL :: updatedof
-    
+
     INTEGER :: Nx, T
     INTEGER :: dof 
     DOUBLE PRECISION, DIMENSION(Nx) :: b, b0, bdev, XY
@@ -3460,7 +3605,7 @@ CONTAINS
     DOUBLE PRECISION :: y(T), X(T,Nx), resid(T)
 
     INTEGER :: status
-    
+
     IF (PRESENT(updatedof)) THEN
        IF (updatedof) dof = dof + T
     END IF
@@ -3513,7 +3658,7 @@ CONTAINS
     ! call savemat(iV, 'gibbsiV.debug')
     ! call savevec((/ ssr /), 'gibbsssr0.debug')
     ! stop 12
-    
+
     !  resid = y - X * b (residual at posterior mean)
     resid = y
     call dgemv('N', T, Nx, -1.0d0, X, T, b, 1, 1.0d0, resid, 1)
@@ -3522,7 +3667,7 @@ CONTAINS
     ! call savevec(resid, 'gibbsresid.debug')
     ! call savevec((/ ssr /), 'gibbsssrStep1.debug')
 
-    
+
     ! final piece: (b-b0)' * iV0 * (b-b0)
     bdev = b - b0
     ! factorize iV0
@@ -3533,7 +3678,7 @@ CONTAINS
        stop 1
     end if
     call DTRMV('u','n','n',Nx,icholV,Nx,bdev,1)
-    
+
     ssr = ssr + sum(bdev ** 2)
 
     ! call savevec((/ ssr /), 'gibbsssr.debug')
