@@ -389,7 +389,7 @@ CONTAINS
     DOUBLE PRECISION, DIMENSION(Nx,0:T) :: x
     DOUBLE PRECISION, DIMENSION(Nx,1:T) :: xshock
     DOUBLE PRECISION, DIMENSION(Ny,1:T) :: y
-    DOUBLE PRECISION, DIMENSION(Nz,0:T) :: z
+    DOUBLE PRECISION, DIMENSION(Nz,0:T-1) :: z
     DOUBLE PRECISION, DIMENSION(Nw,1:T) :: w
 
     ! draw random numbers
@@ -768,7 +768,7 @@ CONTAINS
     DOUBLE PRECISION, DIMENSION(Nx,1:T) :: xshockhat
     DOUBLE PRECISION, DIMENSION(Ny,1:T) :: y,ytilde,ynoisehat
     LOGICAL, DIMENSION(Ny,1:T) :: yNaN
-    DOUBLE PRECISION, DIMENSION(Nz,0:T) :: z
+    DOUBLE PRECISION, DIMENSION(Nz,0:T-1) :: z
 
     DOUBLE PRECISION :: invSigmaY, K(Nx,Ny,T), ImKC(Nx,Nx), Ex0(Nx), Vx0(Nx,Nx), SigmaStarT(Nx,Nx), ddot
 
@@ -1037,7 +1037,7 @@ CONTAINS
     DOUBLE PRECISION, DIMENSION(Nx,T)   :: xshockdraw, xshockhat
     DOUBLE PRECISION, DIMENSION(Ny,1:T) :: y, ydraw, dummynoise, dummyvols
     LOGICAL, DIMENSION(Ny,1:T) :: yNaN
-    DOUBLE PRECISION, DIMENSION(Nz,0:T) :: z
+    DOUBLE PRECISION, DIMENSION(Nz,0:T-1) :: z
 
 
     ! 1) generate plus data
