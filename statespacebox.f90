@@ -365,6 +365,61 @@ CONTAINS
 
   END SUBROUTINE simA3B3C3
 
+  ! @\newpage\subsection{simA3F3B3C3}@
+  SUBROUTINE simA3F3B3C3(y,x,xshock,T,Ny,Nx,Nw,Nz,A,F,B,C,z,Ex0,sqrtVx0,VSLstream)
+
+    INTENT(OUT) :: y,x,xshock
+    INTENT(IN) :: Ny,Nx,Nw,T,A,B,C,Ex0,sqrtVx0
+    INTENT(IN) :: Nz,z
+    INTENT(INOUT) :: VSLstream
+
+    TYPE (vsl_stream_state) :: VSLstream
+    INTEGER :: j, errcode,T,Ny,Nx,Nw
+    INTEGER :: Nz
+    INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
+
+    DOUBLE PRECISION, DIMENSION(Nx,Nx,T) :: A
+    DOUBLE PRECISION, DIMENSION(Nx,Nz,T) :: F
+    DOUBLE PRECISION, DIMENSION(Nx,Nw,T) :: B
+    DOUBLE PRECISION, DIMENSION(Ny,Nx,T) :: C
+
+    DOUBLE PRECISION, DIMENSION(Nx) :: Ex0, x0
+    DOUBLE PRECISION, DIMENSION(Nx,NX) :: sqrtVx0
+
+    DOUBLE PRECISION, DIMENSION(Nx,0:T) :: x
+    DOUBLE PRECISION, DIMENSION(Nx,1:T) :: xshock
+    DOUBLE PRECISION, DIMENSION(Ny,1:T) :: y
+    DOUBLE PRECISION, DIMENSION(Nz,0:T) :: z
+    DOUBLE PRECISION, DIMENSION(Nw,1:T) :: w
+
+    ! draw random numbers
+    errcode    = vdrnggaussian(VSLmethodGaussian, VSLstream, T * Nw, w, 0.0d0, 1.0d0)
+    errcode    = vdrnggaussian(VSLmethodGaussian, VSLstream, Nx, x0, 0.0d0, 1.0d0)
+
+    ! construct x0
+    x(:,0) = Ex0
+    call DGEMV('N',Nx,Nx,1.0d0,sqrtVx0,Nx,x0,1,1.0d0,x(:,0),1)
+
+    ! scale shocks
+    DO j=1,T
+       call DGEMV('N',Nx,Nw,1.0d0,B(:,:,j),Nx,w(:,j),1,0.0d0,xshock(:,j),1)
+    END DO
+
+    ! copy shocks into x
+    x(:,1:T) = xshock
+
+    ! simulate state and observer
+    DO j=1,T
+       call DGEMV('N',Nx,Nx,1.0d0,A(:,:,j),Nx,x(:,j-1),1,1.0d0,x(:,j),1)
+
+       call DGEMV('N',Nx,Nz,1.0d0,F(:,:,j),Nx,z(:,j-1),1,1.0d0,x(:,j),1)
+       
+       call DGEMV('N',Ny,Nx,1.0d0,C(:,:,j),Ny,x(:,j),1,0.0d0,y(:,j),1)
+    END DO
+
+
+  END SUBROUTINE simA3F3B3C3
+
 
   ! @\newpage\subsection{disturbancesmootherA3B3C3scalar}@
   SUBROUTINE disturbancesmootherA3B3C3scalar(xhat,xshockhat,ynoisehat,y,T,Ny,Nx,Nw,A,B,C,noiseVariance,Ex0,Vx0,status)
@@ -691,6 +746,183 @@ CONTAINS
 
   END SUBROUTINE disturbancesmootherA3B3C3NANscalar
 
+  ! @\newpage\subsection{disturbancesmootherA3F3B3C3NANscalar}@
+  SUBROUTINE disturbancesmootherA3F3B3C3NANscalar(xhat,xshockhat,SigmaStarT,ynoisehat,y,yNaN,T,Ny,Nx,Nw,Nz,A,F,B,C,noiseVariance,z,Ex0,Vx0,status)
+
+    INTENT(OUT) :: xhat,xshockhat,SigmaStarT,ynoisehat,status
+    INTENT(IN) :: y,yNaN,Ny,Nx,Nw,T,A,B,C,noiseVariance,Ex0,Vx0
+    INTENT(IN) :: Nz, z, F
+
+    INTEGER :: j,i,ii,T,Ny,Nx,Nw,status
+    INTEGER :: Nz
+    
+    DOUBLE PRECISION, PARAMETER :: ONE = 1.0d0, ZERO = 0.0d0
+
+    DOUBLE PRECISION, DIMENSION(Nx,Nx,T) :: A
+    DOUBLE PRECISION, DIMENSION(Nx,Nw,T) :: B
+    DOUBLE PRECISION, DIMENSION(Ny,Nx,T) :: C
+    DOUBLE PRECISION, DIMENSION(Nx,Nz,T) :: F
+    DOUBLE PRECISION, DIMENSION(Ny,T) :: noiseVariance
+
+    DOUBLE PRECISION, DIMENSION(Nx,0:T) :: xhat
+    DOUBLE PRECISION, DIMENSION(Nx,1:T) :: xshockhat
+    DOUBLE PRECISION, DIMENSION(Ny,1:T) :: y,ytilde,ynoisehat
+    LOGICAL, DIMENSION(Ny,1:T) :: yNaN
+    DOUBLE PRECISION, DIMENSION(Nz,0:T) :: z
+
+    DOUBLE PRECISION :: invSigmaY, K(Nx,Ny,T), ImKC(Nx,Nx), Ex0(Nx), Vx0(Nx,Nx), SigmaStarT(Nx,Nx), ddot
+
+    DOUBLE PRECISION, DIMENSION(Nx,Nx,0:T) :: Sigma
+    DOUBLE PRECISION, DIMENSION(Nx,Nx,1:T) :: BB
+
+    DOUBLE PRECISION, DIMENSION(Nx)     :: S, Sprior
+
+    status = 0
+
+    ! init memory
+    xhat  = zero
+    Sigma = zero
+    BB    = zero
+    status = 0
+
+    ! initial parameters
+    xhat(:,0) = Ex0
+    Sigma(:,:,0) = Vx0
+    ytilde = 0.0d0
+
+    ! NOTES:
+    ! - ytilde is scaled by invSigmaY
+
+    ! forward loop
+    DO j=1,T
+
+       ! prepare priors
+       ! xhat(:,j) = A(:,:,j) * xhat(:,j-1) + F(:,:,j) * z(:,j-1) 
+       call DGEMV('n',Nx,Nx,1.0d0,A(:,:,j),Nx,xhat(:,j-1),1,0.0d0,xhat(:,j),1)
+       call DGEMV('n',Nx,Nz,1.0d0,F(:,:,j),Nz,z(:,j-1),1,1.0d0,xhat(:,j),1)
+
+       ! VCV: Sigma(j) = A * Sigma(j-1) * A' + BB
+       call DSYRK('U','N',Nx,Nw,1.0d0,B(:,:,j),Nx,0.0d0,BB(:,:,j),Nx)
+       Sigma(:,:,j) = BB(:,:,j)
+       call sandwichplus(Sigma(:,:,j), A(:,:,j), Nx, Sigma(:,:,j-1), Nx)
+
+       ! loop over the individual measurements
+       DO i=1,Ny
+
+          IF (.NOT. yNaN(i,j)) THEN
+
+             ! Kalman Gain (not yet scaled by invSigmaY)
+             CALL DSYMV('U', Nx, 1.0d0, Sigma(:,:,j), Nx, C(i,:,j), 1, 0.0d0, K(:,i,j), 1)
+             ! invSigmaY
+             invSigmaY = ddot(Nx, C(i,:,j), 1, K(:,i,j), 1) + noiseVariance(i,j)
+             IF (invSigmaY .lt. 0.0d0) THEN
+                call hrulefill
+                print *, 'Error in Scalar Smoother (A3B3C3nanscalar). Negative SigmaY. [STATESPACEBOX]'
+                print *, 'SigmaY=', invSigmaY
+                print *, 'j=', j, 'i=', i
+                call hrulefill
+                status = 1
+                return
+             ELSE
+                invSigmaY = 1.0d0 / invSigmaY
+             END IF
+
+             ! innovation ytilde (scaled by invSigmaY)
+             ytilde(i,j) = (y(i,j) - ddot(Nx, C(i,:,j), 1, xhat(:,j), 1)) * invSigmaY
+
+             ! update estimate
+             xhat(:,j) = xhat(:,j) + K(:,i,j) * ytilde(i,j)
+
+             ! Posterior VCV: Sigma(:,:,j) = Sigma(:,:,j) - K * invSigmaY * K'
+             CALL DSYR('U', Nx, -invSigmaY, K(:,i,j), 1, Sigma(:,:,j), Nx)
+
+             ! scale K (needed for smoother)
+             K(:,i,j) = K(:,i,j) * invSigmaY
+
+          ELSE
+
+             K(:,i,j)    = 0.0d0 ! just to avoid bad effects, C(i,:,j) should be zero anyway
+             ytilde(i,j) = 0
+
+          END IF
+
+
+       END DO
+
+    END DO
+
+    ! START SMOOTHING
+
+    j = T
+    S      = 0.0d0
+    Sprior = 0.0d0 ! needed if all yNaN(:,t) are true (to support S = Sprior below)
+    DO i=Ny,1,-1
+       IF (.NOT. yNaN(i,j)) THEN
+          Sprior = S
+          ! I - K(i)* C(i)
+          ImKC = 0.0d0
+          FORALL (ii=1:Nx) ImKC(ii,ii) = 1.0d0
+          call DGER(Nx,Nx,-1.0d0,K(:,i,j),1,C(i,:,j),1,ImKC,Nx)
+
+          ! S(i) = C(i)' ytilde(i) + (I-K(i)C(i))'S(i+1) 
+          S = C(i,:,j) * ytilde(i,j)
+          call DGEMV('T',Nx,Nx,1.0d0,ImKC,Nx,Sprior,1,1.0d0,S,1)
+       ELSE
+          S = Sprior ! will be used after the DO loop for xshockhat and Sprior
+       END IF
+    END DO
+    ! xshockhat = BB * S
+    call DSYMV('U',Nx,1.0d0,BB(:,:,j),Nx,S,1,0.0d0,xshockhat(:,j),1)
+    ! Sprior = A(j)' S
+    call DGEMV('T',Nx,Nx,1.0d0,A(:,:,j),Nx,S,1,0.0d0,Sprior,1)
+
+
+    SigmaStarT = Sigma(:,:,T)
+
+    ! backward loop
+    DO j=T-1,1,-1
+
+       ! xhat(j) = xhat(j) + Sigma(j) * Sprior
+       call DSYMV('U',Nx,1.0d0,Sigma(:,:,j),Nx,Sprior,1,1.0d0,xhat(:,j),1)
+
+       DO i=Ny,1,-1
+          IF (.NOT. yNaN(i,j)) THEN
+             ! I - K(i)* C(i)
+             ImKC = 0.0d0
+             FORALL (ii=1:Nx) ImKC(ii,ii) = 1.0d0
+             call DGER(Nx,Nx,-1.0d0,K(:,i,j),1,C(i,:,j),1,ImKC,Nx)
+             ! S(i) = C(i)' ytilde(i) + (I-K(i)C(i))'S(i+1), where S(i) is S, S(i+1) is Sprior
+             S = C(i,:,j) * ytilde(i,j)
+             call DGEMV('T',Nx,Nx,1.0d0,ImKC,Nx,Sprior,1,1.0d0,S,1)
+             Sprior = S
+          ELSE
+             S = Sprior ! will be used after the DO loop for xshockhat and Sprior
+          END IF
+
+       END DO
+
+       ! xshockhat(j) = BB(j) * S
+       call DSYMV('U',Nx,1.0d0,BB(:,:,j),Nx,S,1,0.0d0,xshockhat(:,j),1)
+
+       ! Sprior = A(j)' S
+       call DGEMV('T',Nx,Nx,1.0d0,A(:,:,j),Nx,S,1,0.0d0,Sprior,1)
+
+    END DO
+
+    ! x(0|0) = x(0) + Sigma(0) * Sprior
+    ! call DGEMV('N',Nx,Nx,1.0d0,Sigma(:,:,0),Nx,Sprior,1,1.0d0,xhat(:,0),1)
+    call DSYMV('U',Nx,1.0d0,Sigma(:,:,0),Nx,Sprior,1,1.0d0,xhat(:,0),1)
+
+    ! DONE SMOOTHING
+
+    ! ynoisehat = y - C * xhat
+    ynoisehat = y
+    DO j=1,T
+       call DGEMV('N', Ny, Nx, -1.0d0, C(:,:,j), Ny, xhat(:,j), 1, 1.0d0, ynoisehat(:,j), 1)
+    END DO
+
+  END SUBROUTINE disturbancesmootherA3F3B3C3NANscalar
+
 ! @\newpage\subsection{samplerA3B3C3}@
   SUBROUTINE samplerA3B3C3(xdraw,xshockdraw,y,T,Ny,Nx,Nw,A,B,C,Ex0,sqrtVx0,VSLstream,status)
 
@@ -780,6 +1012,55 @@ CONTAINS
     xshockdraw = xshockdraw - xshockhat
 
   END SUBROUTINE samplerA3B3C3nanscalar
+
+  ! @\newpage\subsection{samplerA3F3B3C3nanscalar}@
+  SUBROUTINE samplerA3F3B3C3nanscalar(xdraw,xshockdraw,SigmaStarT,y,yNaN,T,Ny,Nx,Nw,Nz,A,F,B,C,z,Ex0,sqrtVx0,VSLstream,status)
+
+    INTENT(OUT) :: xdraw,xshockdraw,SigmaStarT,status
+    INTENT(IN) :: y,Ny,Nx,Nw,T,A,B,C,Ex0,sqrtVx0
+    INTENT(IN) :: Nz,z, F
+    INTENT(INOUT) :: VSLstream
+
+    TYPE (vsl_stream_state) :: VSLstream
+    INTEGER :: T,Ny,Nx,Nw,status
+    INTEGER :: Nz
+    
+    DOUBLE PRECISION, DIMENSION(Nx,Nx,T) :: A
+    DOUBLE PRECISION, DIMENSION(Nx,Nw,T) :: B
+    DOUBLE PRECISION, DIMENSION(Ny,Nx,T) :: C
+    DOUBLE PRECISION, DIMENSION(Nx,Nz,T) :: F
+
+    DOUBLE PRECISION, DIMENSION(Nx) :: Ex0, xNull
+    DOUBLE PRECISION, DIMENSION(Nx,NX) :: sqrtVx0, Vx0, SigmaStarT
+
+    DOUBLE PRECISION, DIMENSION(Nx,0:T) :: xdraw, xhat
+    DOUBLE PRECISION, DIMENSION(Nx,T)   :: xshockdraw, xshockhat
+    DOUBLE PRECISION, DIMENSION(Ny,1:T) :: y, ydraw, dummynoise, dummyvols
+    LOGICAL, DIMENSION(Ny,1:T) :: yNaN
+    DOUBLE PRECISION, DIMENSION(Nz,0:T) :: z
+
+
+    ! 1) generate plus data
+    call simA3F3B3C3(ydraw,xdraw,xshockdraw,T,Ny,Nx,Nw,Nz,A,F,B,C,z,Ex0,sqrtVx0,VSLstream)
+    ydraw = ydraw - y
+
+    ! 2) filter the difference
+    Vx0 = 0.0d0
+    call DSYRK('U','N',Nx,Nx,1.0d0,sqrtVx0,Nx,0.0d0,Vx0,Nx)
+
+    ! mean adjustment since projecting onto ydraw - y
+    xNull = 0.0d0
+    dummyvols = 0.0d0
+    call disturbancesmootherA3F3B3C3nanscalar(xhat,xshockhat,SigmaStarT,dummynoise,ydraw,yNaN,T,Ny,Nx,Nw,Nz,A,F,B,C,dummyvols,z,xNull,Vx0,status)
+
+    if (status /= 0) return
+
+    ! 3) adjust draws
+    xdraw = xdraw - xhat
+    xshockdraw = xshockdraw - xshockhat
+
+  END SUBROUTINE samplerA3F3B3C3nanscalar
+
   ! @\newpage\subsection{samplerA3B3C3noisenan}@
   SUBROUTINE samplerA3B3C3noisenan(xdraw,xshockdraw,ynoisedraw,y,yNaN,T,Ny,Nx,Nw,A,B,C,noisevol,Ex0,sqrtVx0,VSLstream,status)
 
