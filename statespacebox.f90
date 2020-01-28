@@ -799,7 +799,7 @@ CONTAINS
        ! prepare priors
        ! xhat(:,j) = A(:,:,j) * xhat(:,j-1) + F(:,:,j) * z(:,j-1) 
        call DGEMV('n',Nx,Nx,1.0d0,A(:,:,j),Nx,xhat(:,j-1),1,0.0d0,xhat(:,j),1)
-       call DGEMV('n',Nx,Nz,1.0d0,F(:,:,j),Nz,z(:,j-1),1,1.0d0,xhat(:,j),1)
+       call DGEMV('n',Nx,Nz,1.0d0,F(:,:,j),Nx,z(:,j-1),1,1.0d0,xhat(:,j),1)
 
        ! VCV: Sigma(j) = A * Sigma(j-1) * A' + BB
        call DSYRK('U','N',Nx,Nw,1.0d0,B(:,:,j),Nx,0.0d0,BB(:,:,j),Nx)
@@ -1041,8 +1041,10 @@ CONTAINS
 
 
     ! 1) generate plus data
+    ! print *, 'entering sim'    
     call simA3F3B3C3(ydraw,xdraw,xshockdraw,T,Ny,Nx,Nw,Nz,A,F,B,C,z,Ex0,sqrtVx0,VSLstream)
     ydraw = ydraw - y
+    ! print *, 'exiting sim'    
 
     ! 2) filter the difference
     Vx0 = 0.0d0
@@ -1051,7 +1053,9 @@ CONTAINS
     ! mean adjustment since projecting onto ydraw - y
     xNull = 0.0d0
     dummyvols = 0.0d0
+    ! print *, 'entering smoother'    
     call disturbancesmootherA3F3B3C3nanscalar(xhat,xshockhat,SigmaStarT,dummynoise,ydraw,yNaN,T,Ny,Nx,Nw,Nz,A,F,B,C,dummyvols,z,xNull,Vx0,status)
+    ! print *, 'exiting smoother'    
 
     if (status /= 0) return
 
