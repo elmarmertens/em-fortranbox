@@ -495,7 +495,7 @@ CONTAINS
     ! returns a vector of *univariate* llfs for realized values yplus at horizon 
     ! note: forecasts of truncated variables assume that lagged *truncated* variables do *not* influence the forecast (TODO)
 
-    ! note: ymedian is niot actually median, but rather mean of conditional medians!!
+    ! note: ymedian is not actually median, but rather mean of conditional medians!!
 
     INTENT(INOUT) :: VSLstream
     INTENT(OUT)   :: ypdf, yforecast, ymedian, yproblb, ycondvar
