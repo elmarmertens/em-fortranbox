@@ -368,7 +368,7 @@ CONTAINS
 
     IMPLICIT NONE
 
-    INTENT(IN)    :: x ! NOTE: will be INOUT because of sorting
+    INTENT(INOUT)    :: x ! NOTE: will be INOUT because of sorting
 
     ! INTEGER, parameter :: Nquantiles = 10
     ! REAL, DIMENSION(Nquantiles), PARAMETER :: quantilegrid = (/ 0.005, 0.025, 0.05, .1586, .25, .75, .8413, 0.95, 0.975, 0.995 /)
@@ -409,7 +409,7 @@ CONTAINS
 
     IMPLICIT NONE
 
-    INTENT(IN)    :: x ! NOTE: will be INOUT because of sorting
+    INTENT(INOUT)    :: x ! NOTE: will be INOUT because of sorting
 
     INTEGER :: Ndraws, status
     DOUBLE PRECISION, DIMENSION(:) :: x
@@ -523,7 +523,7 @@ CONTAINS
 
     IMPLICIT NONE
 
-    INTENT(INOUT) :: theta ! INOUT because of sorting
+    INTENT(IN)    :: theta ! not INOUT since maskedslice will be sorted
     INTENT(IN)    :: Ntheta,Ndraws,filename,mask
 
     ! INTEGER, parameter :: Nquantiles = 10
