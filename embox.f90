@@ -382,7 +382,7 @@ CONTAINS
     Ndraws = size(x)
     CALL dlasrt('I', Ndraws, x, status)
     IF (status /= 0) THEN
-       write (*,*), 'DLASORT ERROR ', status, ' [GET QUANTILES]'
+       write (*,*), 'DLASRT ERROR ', status, ' [GET QUANTILES]'
        stop 1
     END IF
     ! generate index for each fractile
@@ -418,7 +418,7 @@ CONTAINS
     Ndraws = size(x)
     CALL dlasrt('I', Ndraws, x, status)
     IF (status /= 0) THEN
-       write (*,*), 'DLASORT ERROR ', status, ' [MEDIAN]'
+       write (*,*), 'DLASRT ERROR ', status, ' [MEDIAN]'
        stop 1
     END IF
 
@@ -448,7 +448,7 @@ CONTAINS
     DO n = 1, Ntheta
        CALL dlasrt('I', Ndraws, theta(n,:), status)
        IF (status /= 0) THEN
-          write (*,*), 'DLASORT ERROR ', status, ' [STORE ESTIMATES]'
+          write (*,*), 'DLASRT ERROR ', status, ' [STORE ESTIMATES]'
           stop 1
        END IF
     END DO
@@ -493,7 +493,7 @@ CONTAINS
     DO n = 1, Ntheta
        CALL dlasrt('I', Ndraws, theta(:,n), status)
        IF (status /= 0) THEN
-          write (*,*), 'DLASORT ERROR ', status, ' [STORE ESTIMATES]'
+          write (*,*), 'DLASRT ERROR ', status, ' [STORE ESTIMATES]'
           stop 1
        END IF
     END DO
@@ -561,7 +561,7 @@ CONTAINS
        ! sort
        CALL dlasrt('I', Nslicedraws, maskedslice, status)
        IF (status /= 0) THEN
-          write (*,*), 'DLASORT ERROR ', status, ' [STORE ESTIMATES]'
+          write (*,*), 'DLASRT ERROR ', status, ' [STORE ESTIMATES]'
           stop 1
        END IF
 
@@ -607,7 +607,7 @@ CONTAINS
     DO n = 1, Ntheta
        CALL dlasrt('I', Ndraws, theta(n,:), status)
        IF (status /= 0) THEN
-          write (*,*), 'DLASORT ERROR ', status, ' [STORE ESTIMATES]'
+          write (*,*), 'DLASRT ERROR ', status, ' [STORE ESTIMATES]'
           stop 1
        END IF
     END DO
