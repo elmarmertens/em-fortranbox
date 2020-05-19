@@ -253,7 +253,7 @@ CONTAINS
 
 
     ! simulate observer
-    ! TODO: replace wiht a single DGEMM?
+    ! TODO: replace with a single DGEMM?
     DO j=1,T
        call DGEMV('N',Ny,Nx,1.0d0,C,Ny,x(:,j),1,0.0d0,y(:,j),1)
     END DO

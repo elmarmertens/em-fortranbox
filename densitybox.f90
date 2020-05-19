@@ -189,30 +189,11 @@ CONTAINS
 
     ShockScale = 1.0d0 ! note: Nw can be greater than Nsv
 
-    ! simulate state space; TODO: do this inline and optimized?
+    ! simulate state space
     do ii=1,Ndraws
        ShockScale(1:Nsv,:)  = exp(0.5d0 * h(:,:,ii))
        ydraws(:,:,ii) = simyABCsvol0(Nhorizons,Ny,Nx,Nw,A,B,C,ShockScale,x0,VSLstream) 
     end do
-
-    ! ShockScale(1:Nsv,:) = 0.5d0
-    ! call savemat(ShockScale, 'ShockScale.debug')
-
-    ! print *, 'Nsv', Nsv
-    ! print *, 'Nw', Nw
-
-    ! call savevec(x0, 'x0.debug')
-    ! call savemat(A, 'A.debug')
-    ! call savemat(C, 'C.debug')
-    ! call savemat(B, 'B.debug')
-    ! call savemat(ydraws(1,:,:), 'y1.debug')
-    ! call savemat(ydraws(2,:,:), 'y2.debug')
-    ! call savemat(ydraws(3,:,:), 'y3.debug')
-    ! call savemat(ydraws(4,:,:), 'y4.debug')
-    ! call savemat(ydraws(5,:,:), 'y5.debug')
-    ! call savemat(ydraws(6,:,:), 'y6.debug')
-    ! stop 11
-
 
   END SUBROUTINE predictiveDensitySVdraws
 
@@ -264,7 +245,7 @@ CONTAINS
 
     ShockScale = 1.0d0 ! note: Nw can be greater than Nsv
 
-    ! simulate state space; TODO: do this inline and optimized?
+    ! simulate state space
     do ii=1,Ndraws
        ShockScale(1:Nsv,:)  = exp(0.5d0 * h(:,:,ii))
        ydraws(:,:,ii) = simyABCsvol0(Nhorizons,Ny,Nx,Nw,A,B,C,ShockScale,x0,VSLstream) 
@@ -330,47 +311,17 @@ CONTAINS
 
     ! draw x0
     errcode = vdrnggaussian(VSLmethodGaussian, VSLstream, Nx * Ndraws, draw0, 0.0d0, 1.0d0)
-    ! option 1: DGEMV
-    ! forall (ii=1:Ndraws) x0(:,ii) = Ex0
-    ! DO ii=1,Ndraws
-    !    ! todo check transpose
-    !    ! todo: call dgemm
-    !    call DGEMV('t',Nx,Nx,1.0d0,sqrtVx0,Nx,draw0(:,ii),1,1.0d0,x0(:,ii),1)
-    ! END DO
-    ! call savemat(x0, 'x0mv.debug')
 
-    ! option 2: DGEMM
+   
     forall (ii=1:Ndraws) x0(:,ii) = Ex0
     call DGEMM('t','n',Nx,Ndraws,Nx,1.0d0,sqrtVx0,Nx,draw0,Nx,1.0d0,x0,Nx)
     ! todo: replace DGEMM with DTRMM ?
 
-    ! call savemat(x0, 'x0mm.debug')
-    ! stop 11
-
-    ! simulate state space; TODO: do this inline and optimized?
+    ! simulate state space
     do ii=1,Ndraws
        ShockScale(1:Nsv,:)  = exp(0.5d0 * h(:,:,ii))
        ydraws(:,:,ii) = simyABCsvol0(Nhorizons,Ny,Nx,Nw,A,B,C,ShockScale,x0(:,ii),VSLstream) 
     end do
-
-    ! ShockScale(1:Nsv,:) = 0.5d0
-    ! call savemat(ShockScale, 'ShockScale.debug')
-
-    ! print *, 'Nsv', Nsv
-    ! print *, 'Nw', Nw
-
-    ! call savevec(x0, 'x0.debug')
-    ! call savemat(A, 'A.debug')
-    ! call savemat(C, 'C.debug')
-    ! call savemat(B, 'B.debug')
-    ! call savemat(ydraws(1,:,:), 'y1.debug')
-    ! call savemat(ydraws(2,:,:), 'y2.debug')
-    ! call savemat(ydraws(3,:,:), 'y3.debug')
-    ! call savemat(ydraws(4,:,:), 'y4.debug')
-    ! call savemat(ydraws(5,:,:), 'y5.debug')
-    ! call savemat(ydraws(6,:,:), 'y6.debug')
-    ! stop 11
-
 
   END SUBROUTINE simySVCORdraws
 
@@ -430,8 +381,6 @@ CONTAINS
 
     END DO ! hh 
 
-
-    ! TODO: rewrite a separate RW-SV version (code below works also for rho=1)
 
     ! SIMULATE SVs (needed for variance computations) 
     ! draw random numbers
@@ -493,7 +442,7 @@ CONTAINS
   SUBROUTINE predictiveDensitySVtruncLB(ypdf, yforecast, ymedian, yprobLB, ycondvar, Nhorizons, horizons, maxhorizons, Ny, ypred, ynanpred, ytruncated, ytrunclb, Nx, Nw, x, A, B, C, Nsv, h0, hbar, hrho, hinno, VSLstream)
 
     ! returns a vector of *univariate* llfs for realized values yplus at horizon 
-    ! note: forecasts of truncated variables assume that lagged *truncated* variables do *not* influence the forecast (TODO)
+    ! note: forecasts of truncated variables assume that lagged *truncated* variables do *not* influence the forecast
 
     ! note: ymedian is not actually median, but rather mean of conditional medians!!
 
@@ -634,7 +583,7 @@ CONTAINS
              elsewhere ! untruncated density has barely any support above truncation point
 
                 truncMean = ytrunclb(nn)
-                truncVar  = 0.0d0 ! TODO: or some nominal value?
+                truncVar  = 0.0d0 
 
              end where
 

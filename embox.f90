@@ -237,7 +237,7 @@ CONTAINS
   FUNCTION fmtstr(str,N) 
     INTENT(IN) :: N,str
     INTEGER :: n
-    CHARACTER (LEN=10000) :: fmtstr ! todo: make allocatable as function of len(str) * N plus change
+    CHARACTER (LEN=10000) :: fmtstr ! todo: make allocatable as function of len(str) 
     CHARACTER (LEN=*) :: str
     fmtstr = '(' // trim(str) // repeat(',' // trim(str), N-1) // ')'
   END FUNCTION fmtstr

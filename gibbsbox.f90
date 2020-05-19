@@ -1293,7 +1293,7 @@ CONTAINS
 
     ! log-linear observer
     logy2 = log(y ** 2 + 0.001d0)
-    h     = 2.0d0 * log(SVol) ! TODO: make this INOUT? Need to update PREV_ storage in sampler ...
+    h     = 2.0d0 * log(SVol) 
 
     ! PART 2, STEP 1: DRAW KAI2STATES
     ! a) construct PDF for draws (stored in kai2CDF)
@@ -1340,7 +1340,7 @@ CONTAINS
     C = 0.0d0
     FORALL(k=1:Nsv,j=1:T) C(k,k,j) = 1.0d0
 
-    ! todo: clean out redundancy with State0 sqrtState0V
+    ! note: redundancy with State0 sqrtState0V
     State0 = Eh0
     sqrtState0V = sqrtVh0
 
@@ -1349,19 +1349,6 @@ CONTAINS
        print *, 'something off with KSCvec sampler', errcode
        stop 1
     end if
-
-    ! ! debug
-    ! call savemat(A(:,:,1), 'A.debug')
-    ! call savemat(B(:,:,1), 'B.debug')
-    ! call savemat(C(:,:,1), 'C.debug')
-    ! call savemat(State, 'State.debug')
-    ! call savemat(StateShock, 'StateShock.debug')
-    ! call savevec(State0, 'State0.debug')
-    ! call savemat(sqrtState0V, 'sqrtState0V.debug')
-    ! call savemat(logy2star, 'logy2star.debug')
-    ! call savemat(volnoisemix, 'volnoisemix.debug')
-    ! print *, 'rho', rho
-    ! stop 33
 
     ! again: get rid of redundancy
     h      = State(1:Nsv,:)
@@ -1858,7 +1845,7 @@ CONTAINS
 
     ! log-linear observer
     logy2 = log(y ** 2 + 0.001d0)
-    h     = 2.0d0 * log(SVol) ! TODO: make this INOUT? Need to update PREV_ storage in sampler ...
+    h     = 2.0d0 * log(SVol) 
 
     ! PART 2, STEP 1: DRAW KAI2STATES
     ! a) construct PDF for draws (stored in kai2CDF)
@@ -1905,7 +1892,7 @@ CONTAINS
     C = 0.0d0
     FORALL(k=1:Nsv,j=1:T) C(k,k,j) = 1.0d0
 
-    ! todo: clean out redundancy with State0 sqrtState0V
+    ! note: redundancy with State0 sqrtState0V
     State0 = Eh0
     sqrtState0V = sqrtVh0
 
@@ -1996,7 +1983,7 @@ CONTAINS
 
     ! log-linear observer
     logy2 = log(y ** 2 + 0.001d0)
-    h     = 2.0d0 * log(SVol) ! TODO: make this INOUT? Need to update PREV_ storage in sampler ...
+    h     = 2.0d0 * log(SVol) 
 
     ! PART 2, STEP 1: DRAW KAI2STATES
     ! a) construct PDF for draws (stored in kai2CDF)
