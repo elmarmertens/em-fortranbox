@@ -1,2 +1,4 @@
 # em-fortranbox
-Elmar Mertens fortran toolboxes
+fortran toolboxes
+
+Elmar Mertens, em@elmarmertens.com
