@@ -2,12 +2,18 @@ MODULE densitybox
 
   USE embox, only : sqrttwopi, logpi, logtwopi, mean, variance, normpdf, savemat, savevec, savearray3
   USE blaspack, only: sandwich, qrecon, sqrtvcvTR, qrot, qrquery, ivechu !, sandwich2
-  USE statespacebox, only : simyABCsvol0, simyABC
+  USE statespacebox, only : simyABCsvol0, simyABCsvt, simyABC
   USE timerbox, only : tidomp
   USE vslbox
 
 
   IMPLICIT NONE
+
+  type :: SVOgridspace(ngrid)
+     integer, len :: ngrid 
+     double precision, dimension(ngrid) :: values, log2values
+  end type SVOgridspace
+
 
 CONTAINS
 
@@ -129,7 +135,7 @@ CONTAINS
     INTEGER :: ii
 
     type (vsl_stream_state) :: VSLstream
-    ! INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
+    ! ! INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
 
 
     ! init
@@ -169,7 +175,7 @@ CONTAINS
 
     type (vsl_stream_state) :: VSLstream
     integer :: errcode
-    INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
+    ! INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
 
 
     ! init
@@ -221,7 +227,7 @@ CONTAINS
 
     type (vsl_stream_state) :: VSLstream
     integer :: errcode
-    INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
+    ! INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
 
 
     ! init
@@ -254,11 +260,202 @@ CONTAINS
 
   END SUBROUTINE predictiveDensitySVCORdraws
 
+  ! @\newpage\subsection{predictiveDensitySVRWCORdraws}@
+  SUBROUTINE predictiveDensitySVRWCORdraws(ydraws, Ndraws, Nhorizons, Ny, Nx, Nw, x0, A, B, C, h0, sqrtVhshock, VSLstream)
+
+    ! random walk SV
+    ! Nsv = Nw
+
+    INTENT(INOUT) :: VSLstream
+    INTENT(OUT)   :: ydraws
+    INTENT(IN)    :: Nhorizons, Ny, Nx, Nw, x0, A, B, C, h0, sqrtVhshock
+
+    INTEGER :: Ndraws
+    INTEGER :: Nhorizons
+    INTEGER :: Ny, Nx, Nw
+
+    double precision :: x0(Nx), A(Nx,Nx), B(Nx,Nw), C(Ny,Nx)
+    double precision, dimension(Nw) :: h0, sqrtVhshock
+    DOUBLE PRECISION, DIMENSION(Nw,0:Nhorizons,Ndraws) :: h
+    DOUBLE PRECISION, DIMENSION(Nw,Nhorizons,Ndraws) :: hshock
+    DOUBLE PRECISION, DIMENSION(Nw,Nhorizons) :: ShockScale
+
+    double precision, dimension(Ny,Nhorizons,Ndraws) :: ydraws
+
+
+    INTEGER :: hh, ii, jj
+
+    type (vsl_stream_state) :: VSLstream
+    integer :: errcode
+    ! INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
+
+
+    ! init
+    ydraws           = 0.0d0
+
+    ! SIMULATE SVs
+    ! draw random numbers
+    errcode = vdrnggaussian(VSLmethodGaussian, VSLstream, Nw * Nhorizons * Ndraws, hshock, 0.0d0, 1.0d0)
+    ! set initial values
+    forall (ii=1:Ndraws,jj=1:Nw) h(jj,0,ii) = h0(jj)
+    DO ii=1,Ndraws
+       DO hh = 1,Nhorizons
+          h(:,hh,ii) = h(:,hh-1,ii)
+          call DGEMV('n',Nw,Nw,1.0d0,sqrtVhshock,Nw,hshock(:,hh,ii),1,1.0d0,h(:,hh,ii),1)
+       END DO
+    END DO
+
+    ! simulate state space
+    do ii=1,Ndraws
+       ShockScale          = exp(0.5d0 * h(:,:,ii))
+       ydraws(:,:,ii)      = simyABCsvol0(Nhorizons,Ny,Nx,Nw,A,B,C,ShockScale,x0,VSLstream) 
+    end do
+
+
+  END SUBROUTINE predictiveDensitySVRWCORdraws
+
+  ! @\newpage\subsection{predictiveDensitySVORWCORdraws}@
+  SUBROUTINE predictiveDensitySVORWCORdraws(ydraws, Ndraws, Nhorizons, Ny, Nx, Nw, x0, A, B, C, h0, sqrtVhshock, SVOprob, SVOngrid, SVOgrid, VSLstream)
+
+    ! random walk SV
+    ! Nsv = Nw
+
+    INTENT(INOUT) :: VSLstream
+    INTENT(OUT)   :: ydraws
+    INTENT(IN)    :: Nhorizons, Ny, Nx, Nw, x0, A, B, C, h0, sqrtVhshock
+
+    INTEGER :: Ndraws
+    INTEGER :: Nhorizons
+    INTEGER :: Ny, Nx, Nw
+
+    integer, intent(in) :: SVOngrid
+    type(SVOgridspace(SVOngrid)), intent(in) :: SVOgrid
+    double precision, dimension(Nw), intent(in)   :: SVOprob
+    double precision, dimension(Nw, SVOngrid) :: outlierdensity
+ 
+    double precision :: x0(Nx), A(Nx,Nx), B(Nx,Nw), C(Ny,Nx)
+    double precision, dimension(Nw) :: h0, sqrtVhshock
+    DOUBLE PRECISION, DIMENSION(Nw,0:Nhorizons,Ndraws) :: h
+    DOUBLE PRECISION, DIMENSION(Nw,Nhorizons,Ndraws) :: hshock
+    DOUBLE PRECISION, DIMENSION(Nw,Nhorizons) :: ShockScale
+
+    double precision, dimension(Ny,Nhorizons,Ndraws) :: ydraws
+    double precision, dimension(Nw,Nhorizons,Ndraws) :: odraws, udraws
+    integer, dimension(Nw,Nhorizons,Ndraws) :: ondx
+
+
+    INTEGER :: hh, ii, jj
+
+    type (vsl_stream_state) :: VSLstream
+    integer :: errcode
+    ! INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
+
+
+    ! init
+    ydraws           = 0.0d0
+    
+    ! draw SV outliers
+    ! probability of each outlier state
+    ii = 1
+    FORALL (jj=1:Nw)                outlierdensity(jj,ii) = 1.0d0 - SVOprob(jj)
+    FORALL (jj=1:Nw,ii=2:SVOngrid)  outlierdensity(jj,ii) = SVOprob(jj) / dble(SVOngrid - 1)
+    ! convert to cdf
+    ! convert into CDF
+    DO ii=2,SVOngrid
+       outlierdensity(:,ii) = outlierdensity(:,ii-1) + outlierdensity(:,ii)
+    END DO
+    forall (ii=1:SVOngrid-1,jj=1:Nw) outlierdensity(jj,ii) = outlierdensity(jj,ii) / outlierdensity(jj,SVOngrid)
+    outlierdensity(:,SVOngrid) = 1.0d0
+
+    ! draw outlier states
+    errcode = vdrnguniform(VSLmethodUniform, VSLstream, Nw * Nhorizons * Ndraws, udraws, 0.0d0, 1.0d0 )
+    FORALL (jj=1:Nw,hh=1:Nhorizons,ii=1:Ndraws)
+        ondx(jj,hh,ii)    = COUNT(udraws(jj,hh,ii) > outlierdensity(jj,:)) + 1
+        odraws(jj,hh,ii)  = SVOgrid%log2values(ondx(jj,hh,ii))
+    END FORALL
+
+    ! SIMULATE SVs
+    ! draw random numbers
+    errcode = vdrnggaussian(VSLmethodGaussian, VSLstream, Nw * Nhorizons * Ndraws, hshock, 0.0d0, 1.0d0)
+    ! set initial values
+    forall (ii=1:Ndraws,jj=1:Nw) h(jj,0,ii) = h0(jj)
+    DO ii=1,Ndraws
+       DO hh = 1,Nhorizons
+          h(:,hh,ii) = h(:,hh-1,ii)
+          call DGEMV('n',Nw,Nw,1.0d0,sqrtVhshock,Nw,hshock(:,hh,ii),1,1.0d0,h(:,hh,ii),1)
+       END DO
+    END DO
+
+    ! simulate state space
+    do ii=1,Ndraws
+       ShockScale          = exp(0.5d0 * (h(:,:,ii) + odraws(:,:,ii)))
+       ydraws(:,:,ii)      = simyABCsvol0(Nhorizons,Ny,Nx,Nw,A,B,C,ShockScale,x0,VSLstream) 
+    end do
+
+
+  END SUBROUTINE predictiveDensitySVORWCORdraws
+
+  ! @\newpage\subsection{predictiveDensitySVtRWCORdraws}@
+  SUBROUTINE predictiveDensitySVtRWCORdraws(ydraws, Ndraws, Nhorizons, Ny, Nx, Nw, x0, A, B, C, h0, sqrtVhshock, tdof, VSLstream)
+
+    ! random walk SV
+    ! Nsv = Nw
+
+    INTENT(INOUT) :: VSLstream
+    INTENT(OUT)   :: ydraws
+    INTENT(IN)    :: Nhorizons, Ny, Nx, Nw, x0, A, B, C, h0, sqrtVhshock
+
+    INTEGER :: Ndraws
+    INTEGER :: Nhorizons
+    INTEGER :: Ny, Nx, Nw
+
+    double precision, dimension(Nw), intent(in)   :: tdof
+ 
+    double precision :: x0(Nx), A(Nx,Nx), B(Nx,Nw), C(Ny,Nx)
+    double precision, dimension(Nw) :: h0, sqrtVhshock
+    DOUBLE PRECISION, DIMENSION(Nw,0:Nhorizons,Ndraws) :: h
+    DOUBLE PRECISION, DIMENSION(Nw,Nhorizons,Ndraws) :: hshock
+    DOUBLE PRECISION, DIMENSION(Nw,Nhorizons) :: ShockScale
+
+    double precision, dimension(Ny,Nhorizons,Ndraws) :: ydraws
+
+
+    INTEGER :: hh, ii, jj
+
+    type (vsl_stream_state) :: VSLstream
+    integer :: errcode
+    ! ! ! INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
+
+
+    ! init
+    ydraws           = 0.0d0
+    
+    ! SIMULATE SVs
+    ! draw random numbers
+    errcode = vdrnggaussian(VSLmethodGaussian, VSLstream, Nw * Nhorizons * Ndraws, hshock, 0.0d0, 1.0d0)
+    ! set initial values
+    forall (ii=1:Ndraws,jj=1:Nw) h(jj,0,ii) = h0(jj)
+    DO ii=1,Ndraws
+       DO hh = 1,Nhorizons
+          h(:,hh,ii) = h(:,hh-1,ii)
+          call DGEMV('n',Nw,Nw,1.0d0,sqrtVhshock,Nw,hshock(:,hh,ii),1,1.0d0,h(:,hh,ii),1)
+       END DO
+    END DO
+
+    ! simulate state space
+    do ii=1,Ndraws
+       ShockScale          = exp(0.5d0 * h(:,:,ii))
+       ydraws(:,:,ii)      = simyABCsvt(Nhorizons,Ny,Nx,Nw,A,B,C,ShockScale,tdof,x0,VSLstream) 
+    end do
+
+
+  END SUBROUTINE predictiveDensitySVtRWCORdraws
+
   ! @\newpage\subsection{simySVCORdraws}@
   SUBROUTINE simySVCORdraws(ydraws, Ndraws, Nhorizons, Ny, Nx, Nw, Ex0, sqrtVx0, A, B, C, Nsv, h0, hbar, hrho, sqrtVhshock, VSLstream)
 
     ! this routine is a slight variant of predictiveDensitySVCORdraws:
-    ! - instead of jumping off a gixed x0, x0 is drawn from an initial distribution, characterized by Ex0, sqrtVx0
+    ! - instead of jumping off a fixed x0, x0 is drawn from an initial distribution, characterized by Ex0, sqrtVx0
     ! - sqrtVx0 likely comes from a qr-posterior of the Kalman filter, assumed to be right-upper triangular!!!
     ! - (sqrtVhshock continues to be left-choleski factor!)
 
@@ -284,7 +481,7 @@ CONTAINS
 
     type (vsl_stream_state) :: VSLstream
     integer :: errcode
-    INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
+    ! INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
 
 
     ! init
@@ -359,7 +556,7 @@ CONTAINS
 
     type (vsl_stream_state) :: VSLstream
     integer :: errcode
-    INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
+    ! INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
 
 
     ! init
@@ -483,7 +680,7 @@ CONTAINS
 
     type (vsl_stream_state) :: VSLstream
     integer :: errcode
-    INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
+    ! INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
 
 
     ! init
@@ -1077,153 +1274,6 @@ CONTAINS
 
   END FUNCTION iwishlogpdf
 
-  ! @\newpage\subsection{gewekelogMDD}@
-  FUNCTION gewekelogMDD(Ndraws, Ntheta, theta, priorloglike, loglike, tau, logpstar) RESULT(mdd)
-
-    integer, intent(in) :: Ndraws, Ntheta
-    double precision :: mdd
-    double precision, intent(in) :: tau,logpstar
-    double precision, dimension(Ntheta,Ndraws), intent(in) :: theta
-    double precision, dimension(Ntheta,Ndraws) :: resid
-    double precision :: Vtheta(Ntheta,Ntheta), thetabar(Ntheta)
-    double precision, dimension(Ndraws), intent(in) :: priorloglike, loglike
-    double precision, dimension(Ndraws) :: loglikekernel
-    double precision, dimension(Ndraws) :: gewekeF, harmonicScore, thetastat
-    double precision :: chi2CriticalValue
-    integer :: i,j,status
-
-    double precision :: offsetllf
-
-
-    loglikekernel = priorloglike + loglike
-
-    offsetllf = maxval(loglikekernel)
-
-    loglikekernel = loglikekernel- offsetllf
-
-    ! critical value for chi2
-    ! note: select case works only with integers
-    select case (Ntheta)
-    case (95)
-       if (tau == 0.5d0) then
-          chi2CriticalValue = 0.943341714463404d2
-          ! print *, chi2CriticalValue
-       elseif  (tau == 0.25d0) then
-          chi2CriticalValue = 0.853756812673199d2
-       elseif  (tau == 0.75d0) then
-          chi2CriticalValue = 1.038988437863585d2
-       elseif  (tau == 0.9d0) then
-          chi2CriticalValue = 1.130376862860290d2
-       else 
-          print *, 'chi2INVCDF currently not implemented for tau = ', tau
-          stop 1
-       end if
-    case (124)
-       if (tau == 0.5d0) then
-          chi2CriticalValue = 1.233339742870299d2
-          ! print *, chi2CriticalValue
-       elseif  (tau == 0.25d0) then
-          chi2CriticalValue = 1.130464068421386d2
-       elseif  (tau == 0.75d0) then
-          chi2CriticalValue = 1.342278181202454d2
-       elseif  (tau == 0.9d0) then
-          chi2CriticalValue = 1.445615572535341d2
-       else 
-          print *, 'chi2INVCDF currently not implemented for tau = ', tau
-          stop 1
-       end if
-    case (126)
-       if (tau == 0.5d0) then
-          chi2CriticalValue = 1.253339640543887d2
-          ! print *, chi2CriticalValue
-       elseif  (tau == 0.25d0) then
-          chi2CriticalValue = 1.149608327005966d2
-          ! print *, chi2CriticalValue
-       elseif  (tau == 0.75d0) then
-          chi2CriticalValue =  1.363133766836778d2
-       elseif  (tau == 0.9d0) then
-          chi2CriticalValue = 1.467240517072355d2
-       else 
-          print *, 'chi2INVCDF currently not implemented for tau = ', tau
-          stop 1
-       end if
-    case default
-       print *, 'chi2INVCDF currently only implemented for Ntheta = 124, but you have Ntheta =', Ntheta
-       stop 1
-    end select
-
-
-
-    ! moments of theta
-    thetabar = sum(theta,2) / dble(Ndraws)
-    forall (i=1:Ntheta,j=1:Ndraws) resid(i,j) = theta(i,j) - thetabar(i)
-    Vtheta = 0.0d0
-    call DSYRK('l','n',Ntheta,Ndraws,1.0d0 / dble(Ndraws),resid,Ntheta,0.0d0,Vtheta,Ntheta)
-    ! call savemat(Vtheta, 'Vtheta.debug')
-    ! call savemat(resid, 'resid.debug')
-
-    ! sqrtVtheta
-    call DPOTRF('l', Ntheta, Vtheta, Ntheta, status)
-    if (status /= 0) then
-       write (*,*), 'DPOTRF ERROR ', status, ' [COMPUTE GEWEKE MDD]'
-       stop 1
-    END IF
-
-    ! call savemat(Vtheta, 'sqrtVtheta.debug')
-
-    ! normalize resid
-    call DTRSM('l','l','n','n',Ntheta,Ndraws,1.0d0,Vtheta,Ntheta,resid,Ntheta)
-    ! call savemat(resid, 'zresid.debug')
-
-    ! quadraticform
-    thetastat = sum(resid ** 2, 1)
-    ! call savevec(thetastat, 'thetastat.debug')
-
-    ! call savevec(priorloglike, 'priorloglike.debug')
-    ! call savevec(loglike, 'loglike.debug')
-
-    ! mark 1 code:
-    ! - compute ingredients of harmonic mean for all draws and in logs
-    ! - then evaluate indicator function
-    gewekeF    = - log(tau) - 0.5d0 * (Ntheta * logtwopi - logdetsym(Vtheta) - thetastat) - logpstar
-
-    ! print *, 'logpstar', logpstar
-
-    harmonicScore = gewekeF - loglikekernel
-    ! call savevec(harmonicscore, 'logharmonicscore.debug')
-    ! call savevec(gewekeF, 'loggewekeF.debug')
-
-    where (thetastat .le. chi2CriticalValue)
-       ! gewekeF = exp(gewekeF)
-       harmonicScore = exp(harmonicScore)
-    elsewhere
-       ! gewekeF       = 0.0d0
-       harmonicscore = 0.0d0
-    end where
-
-
-    ! mdd = 1.0d0 / (sum(harmonicscore) / dble(Ndraws))
-
-    ! print *, log(mdd),  log(dble(Ndraws)) - log(sum(harmonicScore))
-
-    ! mdd = log(mdd)
-
-    ! ! note: computing *log* of harmonic mean in case of indicator = 1; level otherwise
-    ! where (thetastat .le. chi2CriticalValue)  ! when indicator equals one
-    !    gewekeF    = - log(tau) - 0.5d0 * (Ntheta * logtwopi - logdetsym(Vtheta) - thetastat)
-    !    harmonicScore = exp(gewekeF - priorloglike - loglike)
-    !    ! gewekeF = exp(gewekeF)
-    ! elsewhere !  when indicator equals zero
-    !    gewekeF       = 0.0d0
-    !    harmonicscore = 0.0d0
-    ! end where
-
-
-
-    mdd = log(dble(Ndraws)) - log(sum(harmonicScore)) + offsetllf
-
-  END FUNCTION gewekelogMDD
-
   ! @\newpage\subsection{MVNrnd}@
   FUNCTION MVNrnd(Ndraws, N, mu, sqrtV, VSLstream) result(x) 
 
@@ -1240,7 +1290,7 @@ CONTAINS
 
     ! VSL
     INTEGER :: errcode
-    INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
+    ! INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
     type (vsl_stream_state), intent(inout) :: VSLstream
 
     ! sample
@@ -1285,7 +1335,7 @@ CONTAINS
 
   !   ! VSL
   !   INTEGER :: errcode
-  !   INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
+  !   ! INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
   !   type (vsl_stream_state), intent(inout) :: VSLstream
 
   !   ! init
@@ -1410,7 +1460,7 @@ CONTAINS
 
     ! VSL
     INTEGER :: errcode
-    INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
+    ! INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
     type (vsl_stream_state), intent(inout) :: VSLstream
 
     ! logical :: debugflag 
@@ -1495,6 +1545,68 @@ CONTAINS
     end do ! k particles
 
   END SUBROUTINE drawXelb
+
+ ! @\newpage\subsection{intBetaDraw}@
+  FUNCTION intBetaDraw(alpha, beta, VSLstream) RESULT(draw) 
+
+    ! single draw from beta distribution (simulated with normals)
+
+    IMPLICIT NONE
+
+    INTENT(IN) :: alpha, beta
+    INTENT(INOUT) :: VSLstream
+
+    INTEGER  :: alpha, beta
+
+    DOUBLE PRECISION :: draw, achi2, bchi2
+
+    DOUBLE PRECISION :: z(2 * (alpha + beta))
+
+
+    ! VSL
+    TYPE (VSL_STREAM_STATE) :: VSLstream
+    INTEGER :: errcode
+    ! INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
+
+
+    errcode = vdrnggaussian(VSLmethodGaussian, VSLstream, 2 * (alpha + beta), z, 0.0d0, 1.0d0) 
+    achi2 = sum(z(1:2*alpha) ** 2)
+    bchi2 = sum(z(2*alpha+1:2*(alpha+beta)) ** 2)
+
+    draw = achi2 / (achi2 + bchi2)
+
+  END FUNCTION intBetaDraw
+
+  ! @\newpage\subsection{vslBetaDraws}@
+  FUNCTION vslBetaDraws(alpha, beta, Ndraws, VSLstream) RESULT(draws) ! single draw so far
+
+    ! multiple draws from beta distribution (with separate parameters for each draw)
+    ! jsut a wrapper to VSL
+
+    IMPLICIT NONE
+
+
+    INTEGER, INTENT(IN) :: Ndraws
+
+    DOUBLE PRECISION, INTENT(IN), DIMENSION(Ndraws)  :: alpha, beta
+
+    DOUBLE PRECISION, DIMENSION(Ndraws) :: draws
+
+    ! VSL
+    TYPE (VSL_STREAM_STATE), INTENT(INOUT) :: VSLstream
+    INTEGER :: errcode
+    INTEGER :: n
+
+    do n=1,Ndraws
+       errcode = vdrngBeta(VSL_RNG_METHOD_BETA_CJA, VSLstream, 1, draws(n), alpha(n), beta(n), 0.0d0, 1.0d0) 
+
+       if (errcode .ne. 0) then
+          print *, 'ERROR', alpha(n), beta(n)
+       end if
+       
+    end do
+
+  END FUNCTION vslBetaDraws
 
 END MODULE densitybox
 

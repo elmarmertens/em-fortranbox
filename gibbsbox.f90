@@ -2,13 +2,232 @@ MODULE gibbsbox
 
   USE blaspack, only : eye, vec, symmetric, symkronecker, XprimeX, xxprime, xxprime, invsym, choleski, maxroot
   USE statespacebox, only : samplerA3B3C3noise, dlyap
+  USE densitybox, only : vslBetaDraws, SVOgridspace
   USE embox, only : savemat, savevec, savearray3 ! debugging
   USE timerbox
   USE vslbox
 
   IMPLICIT NONE
 
+
 CONTAINS
+
+
+  ! @\newpage\subsection{ineffbatch}@
+  function ineffbatch(x,Nbatches) result(f)
+
+    integer, optional :: Nbatches
+    integer :: Kbatch, Nbatch
+
+
+    double precision, dimension(:,:) :: x ! Nx x Ndraws
+    double precision, dimension(size(x,1)) :: f
+    double precision, dimension(size(x,1)) :: acf0, mean0, betweenmeansVariance
+    double precision, allocatable, dimension(:,:) :: batchmeans
+    integer :: Nx, Ndraws
+    integer :: ii
+
+    Nx     = size(x,1)
+    Ndraws = size(x,2)
+
+    if (PRESENT(Nbatches)) then
+       Nbatch = Nbatches
+    else
+       Nbatch = 20
+    end if
+
+
+    ! compute sample mean and variance
+    mean0 = sum(x,2) / Ndraws
+    acf0  = sum(x ** 2,2) / Ndraws - mean0 ** 2
+
+    ! compute batch means
+    Kbatch = int(Ndraws / Nbatch)
+    allocate (batchmeans(Nx,Nbatch))
+    do ii=1,Nbatch
+       batchmeans(:,ii) = sum(x(:,(ii-1)*Kbatch+1:ii*Kbatch), 2) / Kbatch 
+       batchmeans(:,ii) = batchmeans(:,ii) - mean0
+    end do
+    
+    betweenmeansVariance = sum(batchmeans ** 2,2) / (Nbatch - 1)
+
+    ! compute ineff factor
+    f = (betweenmeansVariance / Nbatch) / (acf0 / Ndraws) 
+
+    deallocate (batchmeans)
+
+  end function ineffbatch
+
+  ! @\newpage\subsection{ineffparzen}@
+  function ineffparzen(x,bandwidth) result(f)
+
+    integer, optional :: bandwidth
+    integer :: K
+
+
+    double precision, dimension(:,:), intent(in) :: x ! Nx x Ndraws
+    double precision, dimension(size(x,1),size(x,2)) :: xdev ! Nx x Ndraws
+    double precision, dimension(size(x,1)) :: f
+    double precision, dimension(size(x,1)) :: acf0, mean0
+    double precision, allocatable, dimension(:,:) :: acc 
+    double precision, allocatable, dimension(:) :: kernel
+    double precision  :: kw
+    integer :: Nx, Ndraws
+    integer :: ii, jj
+
+    Nx     = size(x,1)
+    Ndraws = size(x,2)
+
+    if (PRESENT(bandwidth)) then
+       K = bandwidth
+    else
+       K = min(Ndraws,int(100/sqrt(5000.0d0)*sqrt(dble(Ndraws)))) ! from bayesem R package
+    end if
+
+    mean0 = sum(x,2) / Ndraws
+    forall(ii=1:Nx,jj=1:Ndraws) xdev(ii,jj) = x(ii,jj) - mean0(ii)
+
+    allocate (acc(Nx,K), kernel(K))
+    ! compute kernel weights (here: Parzen)
+    ! kernel(0) = 1.0d0
+    do ii=1,int(K / 2) 
+       kw         = dble(ii) / dble(K)
+       kernel(ii) = 1.0d0 - 6.0d0 * (kw ** 2) + 6.0d0 * kw ** 3
+    end do
+    do ii=int(K / 2) + 1, K
+       kw = dble(ii) / dble(K)
+       kernel(ii) = 2.0d0 * ((1.0d0 - kw)  ** 3)
+    end do
+
+
+    ! compute acf
+    acf0 = sum(xdev ** 2,2) / Ndraws
+    do ii=1,K
+       acc(:,ii) = sum(xdev(:,ii+1:Ndraws) * xdev(:,1:Ndraws-ii),2) / Ndraws 
+    end do
+
+    ! transform acf into acc
+    forall (ii=1:K,jj=1:Nx) acc(jj,ii) = acc(jj,ii) / acf0(jj)
+    ! kernel-weighted acf
+    forall(ii=1:K,jj=1:Nx) acc(jj,ii) = acc(jj,ii) * kernel(ii)
+
+    ! compute ineff factor
+    f = 1.0d0 + 2.0d0 * sum(acc,2)
+
+    deallocate (acc, kernel)
+
+  end function ineffparzen
+
+  ! @\newpage\subsection{ineffbrtltt}@
+  function ineffbrtltt(x,bandwidth) result(f)
+
+    integer, optional :: bandwidth
+    integer :: K
+
+    double precision, dimension(:,:), intent(in) :: x ! Nx x Ndraws
+    double precision, dimension(size(x,1),size(x,2)) :: xdev ! Nx x Ndraws
+    double precision, dimension(size(x,1)) :: f
+    double precision, dimension(size(x,1)) :: acf0, mean0
+    double precision, allocatable, dimension(:,:) :: acc 
+    double precision, allocatable, dimension(:) :: kernel
+    double precision  :: kw
+    integer :: Nx, Ndraws
+
+    integer :: ii, jj
+
+    Nx     = size(x,1)
+    Ndraws = size(x,2)
+
+    if (PRESENT(bandwidth)) then
+       K = bandwidth
+    else
+       K = min(Ndraws,int(100/sqrt(5000.0d0)*sqrt(dble(Ndraws)))) ! from bayesem R package
+    end if
+
+    mean0 = sum(x,2) / Ndraws
+    forall(ii=1:Nx,jj=1:Ndraws) xdev(ii,jj) = x(ii,jj) - mean0(ii)
+
+    allocate (acc(Nx,K), kernel(K))
+
+    ! compute kernel weights (here: Bartlett)
+    ! kernel(0) = 1.0d0
+    do ii=1,K
+       kw = dble(ii) / dble(K)
+       kernel(ii) = 1.0d0 - kw
+    end do
+
+
+    ! compute acf
+    acf0 = sum(xdev ** 2,2) / Ndraws
+    do ii=1,K
+       acc(:,ii) = sum(xdev(:,ii+1:Ndraws) * xdev(:,1:Ndraws-ii),2) / Ndraws 
+    end do
+
+    ! transform acf into acc
+    forall (ii=1:K,jj=1:Nx) acc(jj,ii) = acc(jj,ii) / acf0(jj)
+    ! kernel-weighted acf
+    forall(ii=1:K,jj=1:Nx) acc(jj,ii) = acc(jj,ii) * kernel(ii)
+
+    ! compute ineff factor
+    f = 1.0d0 + 2.0d0 * sum(acc,2)
+
+    deallocate (acc, kernel)
+
+  end function ineffbrtltt
+
+  ! @\newpage\subsection{olsdraw}@
+  SUBROUTINE olsdraw(bdraw, Nobs, Ny, Nx, Y, X, VSLstream)
+
+    integer, intent(in) :: Nobs, Ny, Nx
+    double precision, intent(out), dimension(Nx,Ny) :: bdraw
+    double precision, intent(in) :: y(Nobs, Ny), x(Nobs, Nx)
+    double precision :: xx(Nx, Nx), xy(Nx,Ny), yresid(Nobs,Ny), ssr(ny,ny), sqrtSSRdraw(ny,ny), bhat(Nx,Ny)
+    integer :: errcode
+
+    ! INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
+    TYPE (vsl_stream_state) :: VSLstream
+
+    ! X'X
+    XX = 0.0d0 ! to clean out lower triangular part of XX
+    call DSYRK('U','T',Nx,Nobs,1.0d0,X,Nobs,0.0d0,XX,Nx)
+    call DPOTRF('U',Nx,xx,Nx,errcode)
+    if (errcode .ne. 0) then
+       print *,'dpotrf error in ols'
+       stop 1
+    end if
+
+    ! x'y
+    call DGEMM('t','n',Nx,Ny,Nobs,1.0d0,x,Nobs,y,Nobs,0.0d0,xy,Nx)
+
+    ! solve xx * bhat = xy for bhat
+    bhat = xy
+    call DPOTRS('u', Nx, Ny, xx, Nx, bhat, Nx, errcode)
+    if (errcode .ne. 0) then
+       print *,'dpotrs error in ols'
+       stop 1
+    end if
+
+    ! compute yresid = y - x * b
+    yresid = y
+    call DGEMM('N','N',Nobs,Ny,Nx,-1.0d0,X,Nobs,bhat,Nx,1.0d0,yresid,Nobs)
+
+    ! compute ssr = resid' * resid
+    call DSYRK('u','t',Ny,Nobs,1.0d0,yresid,Nobs,0.0d0,ssr,Ny)
+
+    ! draw S sim IW(ssr, Nobs-Nx), returns upper choleski-left
+    call iwishcholDraw(sqrtSSRdraw, ssr, Nobs-Nx, Ny, VSLstream)
+
+    ! draw normal, scale and shift
+    errcode  = vdrnggaussian(VSLmethodGaussian, VSLstream, Ny * Nx, bdraw, 0.0d0, 1.0d0)
+
+    ! bdraw = bdraw * transpose(sqrtSSR)
+    call DTRMM('r','u','t','n',Nx,Ny,1.0d0,sqrtSSRdraw,Ny,bdraw,Nx)
+    ! bdraw = transpose(xx) \ bdraw
+    call DTRTRS('u', 't', 'n', Nx, Ny, xx, Nx, bdraw, Nx, errcode)
+
+    bdraw = bhat + bdraw
+
+  END SUBROUTINE olsdraw
 
   ! @\newpage\subsection{bayesSURSV}@
   SUBROUTINE bayesSURSV(bdraw, residuals, Ydata, Xdata, Ny, Nx, MaxNx, T, k, iSigmaResid, b0, V0i, VSLstream)
@@ -19,7 +238,7 @@ CONTAINS
     DOUBLE PRECISION, DIMENSION(k, k) :: Vi, V0i
     DOUBLE PRECISION, DIMENSION(k) ::    b, bdraw, b0
     DOUBLE PRECISION :: iSigmaResid(Ny,Ny,T), residuals(T,Ny), Ytilde(Ny), Ydata(T,Ny), Xdata(T,MaxNx,Ny), X(Ny,k), work(Ny, k), Y(Ny) !  XY(k),
-    INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
+    ! INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
     TYPE (vsl_stream_state) :: VSLstream
     Ytilde = 0.0d0
     ! set up the priors
@@ -98,7 +317,7 @@ CONTAINS
     DOUBLE PRECISION, DIMENSION(0:T) :: z
     TYPE (vsl_stream_state), INTENT(INOUT) :: VSLstream
     INTEGER :: j, errcode
-    INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
+    ! INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
 
 
     errcode = vdrnggaussian(VSLmethodGaussian, VSLstream, T + 1, z, 0.0d0, sigma)
@@ -121,7 +340,7 @@ CONTAINS
     DOUBLE PRECISION, DIMENSION(N,0:T) :: h, z
     DOUBLE PRECISION :: sqrtVh(N,N), Eh0(N), sqrtVh0(N,N)
     TYPE (vsl_stream_state) :: VSLstream
-    INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
+    ! INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
 
     ! draw random numbers
     errcode    = vdrnggaussian(VSLmethodGaussian, VSLstream, (T + 1) * N, z, 0.0d0, 1.0d0)
@@ -148,7 +367,7 @@ CONTAINS
     DOUBLE PRECISION, DIMENSION(0:T) :: z
     DOUBLE PRECISION :: rho, sigma, vary
     TYPE (vsl_stream_state) :: VSLstream
-    INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0, E0 = 0
+    ! INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0, E0 = 0
 
     errcode = vdrnggaussian(VSLmethodGaussian, VSLstream, T + 1, z, 0.0d0, 1.0d0)
 
@@ -175,7 +394,7 @@ CONTAINS
     DOUBLE PRECISION, DIMENSION(N)   :: rho
     DOUBLE PRECISION, DIMENSION(N,N) :: sqrtSigma, sqrtSigma0, A
     TYPE (vsl_stream_state) :: VSLstream
-    INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0, E0 = 0
+    ! INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0, E0 = 0
 
     errcode = vdrnggaussian(VSLmethodGaussian, VSLstream, N * (T + 1), z, 0.0d0, 1.0d0)
 
@@ -215,7 +434,7 @@ CONTAINS
     INTENT (OUT) :: tau
     INTENT(INOUT) :: VSLstream
     INTEGER j, errcode, T
-    INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
+    ! INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
     DOUBLE PRECISION, DIMENSION(0:T) :: tautT, tau, tauplus, SigmaStar, z
     DOUBLE PRECISION, DIMENSION(T) :: y, yplus, vartrend, varnoise, Sigma, e
     DOUBLE PRECISION :: X0, V0, gain
@@ -282,7 +501,7 @@ CONTAINS
     INTENT (OUT) :: beta
     INTENT(INOUT) :: VSLstream
     INTEGER j, errcode, T
-    INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
+    ! INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
     DOUBLE PRECISION, DIMENSION(0:T) :: betatT, beta, betaplus, SigmaStar, z
     DOUBLE PRECISION, DIMENSION(T) :: y, yplus, x, Sigma, e
     DOUBLE PRECISION :: beta0, beta0V, gain, omxgain, varbeta, varnoise
@@ -345,24 +564,19 @@ CONTAINS
     INTENT(IN) :: draws
 
     INTEGER :: Nsims, Nstreams
-    DOUBLE PRECISION, DIMENSION(Nsims,Nstreams)  :: draws
-    DOUBLE PRECISION, ALLOCATABLE, DIMENSION(:,:) :: edraws
+    DOUBLE PRECISION, DIMENSION(Nsims,Nstreams) :: draws
+    DOUBLE PRECISION, DIMENSION(Nsims,Nstreams) :: edraws
     DOUBLE PRECISION :: SRstat, W, B, psibar
     DOUBLE PRECISION, DIMENSION(Nstreams) :: psi, s2 ! mean and variance within stream
-    INTEGER :: j,status
+    INTEGER :: j
 
     ! within stream means
     psi    = sum(draws,1) / Nsims
     psibar = sum(psi) / Nstreams
 
     ! variance between means
-    B  = sum((psi - psibar) ** 2) / (Nstreams - 1)
+    B  = sum((psi - psibar) ** 2) / (Nstreams - 1) ! note: this is B/n of Gelman-Rubin
 
-
-    ALLOCATE (edraws(Nsims,Nstreams), STAT=status)
-    IF (status /=0) THEN
-       WRITE (*,*) 'Could not allocate edraws'
-    END IF
 
     ! within stream variances
     FORALL (j=1:Nstreams)
@@ -372,16 +586,141 @@ CONTAINS
     ! average of within-stream-variances
     W  = sum(s2) / Nstreams
 
-    DEALLOCATE (edraws, STAT=status)
-    IF (status /=0) THEN
-       WRITE (*,*) 'Could not de-allocate edraws'
-    END IF
-
     SRstat = sqrt(dble(Nsims - 1) / dble(Nsims)  + B / W)
 
   END SUBROUTINE GelmanTest1
 
-  ! @\newpage\subsection{drawNDXpdf}@
+  ! @\newpage\subsection{GelmanTest}@
+  PURE FUNCTION GelmanTest(draws) RESULT(SRstat)
+    IMPLICIT NONE
+
+    INTENT(IN) :: draws
+
+    INTEGER :: Nsims, Nstreams
+    DOUBLE PRECISION, DIMENSION(:,:) :: draws
+    DOUBLE PRECISION, DIMENSION(size(draws,1),size(draws,2)) :: edraws
+    DOUBLE PRECISION :: SRstat, W, B, psibar
+    DOUBLE PRECISION, DIMENSION(size(draws,2)) :: psi, s2 ! mean and variance within stream
+    INTEGER :: j
+
+    Nsims    = size(draws,1)
+    Nstreams = size(draws,2)
+
+    ! within stream means
+    psi    = sum(draws,1) / Nsims
+    psibar = sum(psi) / Nstreams
+
+    ! variance between means
+    B  = sum((psi - psibar) ** 2) / (Nstreams - 1)
+
+
+    ! within stream variances
+    FORALL (j=1:Nstreams)
+       edraws(:,j) = draws(:,j) - psi(j)
+    END FORALL
+    s2 = sum(edraws ** 2, 1) / (Nsims - 1)
+    ! average of within-stream-variances
+    W  = sum(s2) / Nstreams
+
+    SRstat = sqrt(dble(Nsims - 1) / dble(Nsims)  + B / W)
+
+  END FUNCTION GelmanTest
+
+  ! @\newpage\subsection{GelmanTestVec}@
+  PURE FUNCTION GelmanTestVec(draws) RESULT(SRstat)
+
+    ! operates over vectors of parameters (elementwise SRstats)
+    ! draws(Nvar,Nsims,Nstreams)
+
+    IMPLICIT NONE
+
+    INTENT(IN) :: draws
+
+    INTEGER :: Nsims, Nstreams, Nvar
+    DOUBLE PRECISION, DIMENSION(:,:,:) :: draws
+    DOUBLE PRECISION, DIMENSION(size(draws,1),size(draws,2),size(draws,3)) :: edraws
+    DOUBLE PRECISION, DIMENSION(size(draws,1)) :: SRstat, W, B, psibar
+    DOUBLE PRECISION, DIMENSION(size(draws,1),size(draws,3)) :: psi, s2 ! mean and variance within stream
+    INTEGER :: ii,jj,nn
+
+    Nvar     = size(draws,1)
+    Nsims    = size(draws,2)
+    Nstreams = size(draws,3)
+
+    ! within stream means
+    psi    = sum(draws,2) / Nsims
+    psibar = sum(psi,2) / Nstreams
+    ! deviations of psi from common mean
+    forall(ii=1:Nvar,jj=1:Nstreams) psi(ii,jj) = psi(ii,jj) - psibar(ii)
+
+    ! variance between means
+    B  = sum(psi ** 2, 2) / (Nstreams - 1) ! note: this is B/n of Gelman-Rubin
+
+
+    ! within stream variances
+    FORALL (ii=1:Nvar,nn=1:Nsims,jj=1:Nstreams)
+       edraws(ii,nn,jj) = draws(ii,nn,jj) - psi(ii,jj) - psibar(ii)
+    END FORALL
+    s2 = sum(edraws ** 2, 2) / (Nsims - 1)
+    ! average of within-stream-variances
+    W  = sum(s2,2) / Nstreams
+
+    SRstat = sqrt(dble(Nsims - 1) / dble(Nsims)  + B / W)
+
+  END FUNCTION GelmanTestVec
+
+  ! @\newpage\subsection{GelmanEffVec}@
+  PURE FUNCTION GelmanEffVec(draws) RESULT(EFFstat)
+
+    ! computes Gelman-Rubing nmber of effective draws
+
+    ! todo: merge with GelmanTestVec
+
+    ! operates over vectors of parameters (elementwise SRstats)
+    ! draws(Nvar,Nsims,Nstreams)
+
+    IMPLICIT NONE
+
+    INTENT(IN) :: draws
+
+    INTEGER :: Nsims, Nstreams, Nvar
+    DOUBLE PRECISION, DIMENSION(:,:,:) :: draws
+    DOUBLE PRECISION, DIMENSION(size(draws,1),size(draws,2),size(draws,3)) :: edraws
+    DOUBLE PRECISION, DIMENSION(size(draws,1)) :: EFFstat, W, B, psibar
+    DOUBLE PRECISION, DIMENSION(size(draws,1),size(draws,3)) :: psi, s2 ! mean and variance within stream
+    INTEGER :: ii,jj,nn
+
+    Nvar     = size(draws,1)
+    Nsims    = size(draws,2)
+    Nstreams = size(draws,3)
+
+    ! within stream means
+    psi    = sum(draws,2) / Nsims
+    psibar = sum(psi,2) / Nstreams
+    ! deviations of psi from common mean
+    forall(ii=1:Nvar,jj=1:Nstreams) psi(ii,jj) = psi(ii,jj) - psibar(ii)
+
+    ! variance between means
+    B  = sum(psi ** 2, 2) / (Nstreams - 1) ! note: this is B/n of Gelman-Rubin
+
+
+    ! within stream variances
+    FORALL (ii=1:Nvar,nn=1:Nsims,jj=1:Nstreams)
+       edraws(ii,nn,jj) = draws(ii,nn,jj) - psi(ii,jj) - psibar(ii)
+    END FORALL
+    s2 = sum(edraws ** 2, 2) / (Nsims - 1)
+    ! average of within-stream-variances
+    W  = sum(s2,2) / Nstreams
+
+    EFFstat = dble(Nstreams) * ((dble(Nsims) - 1.0d0) / dble(Nsims) * W / B + 1.0d0)
+    where (EFFstat .gt. Nsims * Nstreams) 
+       EFFstat = dble(Nsims * Nstreams)
+    end where
+    
+
+  END FUNCTION GelmanEffVec
+
+  ! @\newpage\subsection{drawNDXudisc}@
   SUBROUTINE drawNDXudisc(ndx, Ndraws, N, VSLstream)
     ! draw discrete uniform over elements 1 : T
     ! (like randi in matlab)
@@ -392,7 +731,7 @@ CONTAINS
     INTENT(INOUT) :: VSLstream
 
     INTEGER :: Ndraws, N, errcode, j
-    INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
+    ! INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
     DOUBLE PRECISION, DIMENSION(Ndraws) :: u
     DOUBLE PRECISION, DIMENSION(N) :: cdf
     INTEGER, DIMENSION(Ndraws) :: ndx
@@ -423,7 +762,7 @@ CONTAINS
     INTENT(INOUT) :: VSLstream
 
     INTEGER :: Ndraws, N, errcode, j
-    INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
+    ! INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
     DOUBLE PRECISION, DIMENSION(Ndraws) :: u
     INTEGER, DIMENSION(Ndraws) :: ndx
     DOUBLE PRECISION, DIMENSION(N) :: pdf, cdf
@@ -527,6 +866,7 @@ CONTAINS
     END FORALL
 
   END SUBROUTINE drawKSCstates
+
   ! @\newpage\subsection{stochvolKSC0}@
   SUBROUTINE stochvolKSC0(h, y, T, hInno, Eh0, Vh0, VSLstream)
 
@@ -550,7 +890,7 @@ CONTAINS
     DOUBLE PRECISION, DIMENSION(0:T) :: h
     DOUBLE PRECISION  :: hInno, Eh0, Vh0
 
-    INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
+    ! INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
     TYPE (vsl_stream_state) :: VSLstream
 
     ! log-linear observer
@@ -619,7 +959,7 @@ CONTAINS
     DOUBLE PRECISION, DIMENSION(0:T) :: h, SVol
     DOUBLE PRECISION  :: hInno, Eh0, Vh0
 
-    INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
+    ! INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
     TYPE (vsl_stream_state) :: VSLstream
 
     ! log-linear observer
@@ -696,7 +1036,7 @@ CONTAINS
     DOUBLE PRECISION :: A(2,2,T), B(2,1,T), C(1,2,T), y2noise(T), hshock(T)
 
 
-    INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
+    ! INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
     TYPE (vsl_stream_state) :: VSLstream
 
     ! log-linear observer
@@ -808,7 +1148,7 @@ CONTAINS
     DOUBLE PRECISION :: A(2,2,T), B(2,1,T), C(1,2,T), y2noise(T), hshock(T)
 
 
-    INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
+    ! INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
     TYPE (vsl_stream_state) :: VSLstream
 
     ! log-linear observer
@@ -892,6 +1232,7 @@ CONTAINS
     SVol = exp(h * 0.5d0)
 
   END SUBROUTINE stochvolKSCar1plus
+
   ! @\newpage\subsection{igammaDraw}@
   SUBROUTINE igammaDraw(draw, sigma0T, dof0, VSLstream)
 
@@ -901,19 +1242,47 @@ CONTAINS
     INTEGER :: dof0, errcode
     type (vsl_stream_state) :: VSLstream
 
-    DOUBLE PRECISION, DIMENSION(dof0) :: z
-    DOUBLE PRECISION :: sigma0T, draw
+    ! DOUBLE PRECISION, DIMENSION(dof0) :: z
+    DOUBLE PRECISION :: sigma0T, draw, thisdraw(1)
 
     INTEGER, PARAMETER :: VSLmethodGaussian = 0
 
     ! draw
-    errcode    = vdrnggaussian(VSLmethodGaussian, VSLstream, dof0, z, 0.0d0, 1.0d0)
-    draw = sigma0T / sum(z ** 2)
+    ! errcode    = vdrnggaussian(VSLmethodGaussian, VSLstream, dof0, z, 0.0d0, 1.0d0)
+    ! draw = sigma0T / sum(z ** 2)
+
+    errcode    = vdrnggamma(VSL_RNG_METHOD_GAMMA_GNORM, VSLstream, 1, thisdraw, sigma0T * .5d0, 0.0d0,  2.0d0 /  dble(dof0))
+
+    draw = thisdraw(1) ! work around to avoid scalar-vs-array compile errors
 
   END SUBROUTINE igammaDraw
 
-  ! @\newpage\subsection{igammaDraws}@
+  ! ! @\newpage\subsection{igammaDraws}@
+  ! SUBROUTINE igammaDraws(draw, N, sigma0T, dof0, VSLstream)
+
+  !   ! multiple draws with *different* parameter values sigma0T, quicker via homemade chi2 computation
+
+  !   INTENT(INOUT) :: draw, VSLstream
+  !   INTENT(IN)    :: N, sigma0T, dof0
+
+  !   INTEGER :: dof0, errcode
+  !   type (vsl_stream_state) :: VSLstream
+
+  !   INTEGER :: N
+  !   DOUBLE PRECISION, DIMENSION(dof0,N) :: z
+  !   DOUBLE PRECISION, DIMENSION(N) :: sigma0T, draw
+
+  !   INTEGER, PARAMETER :: VSLmethodGaussian = 0
+
+  !   errcode    = vdrnggaussian(VSLmethodGaussian, VSLstream, dof0 * N, z, 0.0d0, 1.0d0)
+  !   draw       = sigma0T / sum(z ** 2,1)
+
+  ! END SUBROUTINE igammaDraws
+
+  ! @\newpage\subsection{igammaDraws}@ 
   SUBROUTINE igammaDraws(draw, N, sigma0T, dof0, VSLstream)
+
+    ! new implementation by calling VSL-chisquare RNG (instead of homemade sim)
 
     INTENT(INOUT) :: draw, VSLstream
     INTENT(IN)    :: N, sigma0T, dof0
@@ -922,14 +1291,18 @@ CONTAINS
     type (vsl_stream_state) :: VSLstream
 
     INTEGER :: N
-    DOUBLE PRECISION, DIMENSION(dof0,N) :: z
+
+    DOUBLE PRECISION, DIMENSION(N) :: chisquares
     DOUBLE PRECISION, DIMENSION(N) :: sigma0T, draw
 
     INTEGER, PARAMETER :: VSLmethodGaussian = 0
 
-    ! draw
-    errcode    = vdrnggaussian(VSLmethodGaussian, VSLstream, dof0 * N, z, 0.0d0, 1.0d0)
-    draw       = sigma0T / sum(z ** 2,1)
+    ! errcode    = vdrnggaussian(VSLmethodGaussian, VSLstream, dof0 * N, z, 0.0d0, 1.0d0)
+    ! draw       = sigma0T / sum(z ** 2,1)
+
+    errcode    = vdrngchisquare(VSLmethodChisquare, VSLstream, N, chisquares, dof0)
+    draw       = sigma0T / chisquares
+
 
   END SUBROUTINE igammaDraws
 
@@ -1161,7 +1534,7 @@ CONTAINS
 
     INTEGER :: i, k, T, Ny, Nslopes, offset, these
     DOUBLE PRECISION :: SVol(Ny,0:T), y(Ny,T), E0slopes(Nslopes), iV0slopes(Nslopes, Nslopes), shockslopes(Nslopes)
-    INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
+    ! INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
     TYPE (vsl_stream_state) :: VSLstream
 
 
@@ -1199,7 +1572,7 @@ CONTAINS
 
     INTEGER :: i, k, T, Ny, North, Nslopes, offset, these
     DOUBLE PRECISION :: SVol(Ny,0:T), y(Ny,T), shockslopes(Nslopes)
-    INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
+    ! INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
     TYPE (vsl_stream_state) :: VSLstream
 
 
@@ -1237,7 +1610,7 @@ CONTAINS
 
     INTEGER :: i, k, T, Ny, Nslopes, offset, these
     DOUBLE PRECISION :: SVol(Ny,0:T), y(Ny,T), shockslopes(Nslopes)
-    INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
+    ! INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
     TYPE (vsl_stream_state) :: VSLstream
 
 
@@ -1263,6 +1636,90 @@ CONTAINS
 
   END SUBROUTINE bayesregcholeskidiffuse
 
+
+  ! @\newpage\subsection{commonstochvolRW}@
+  SUBROUTINE commonstochvolRW(h, hshock, y, Ny, T, hInno, VSLstream)
+
+    ! uses corrected MCMC order as per DelNegro and Primiceri (2013)
+    ! same as stochvolKSC, except that kai2states are not used/stored as argument anymore
+    ! ... and slight change in the order of arguments ...
+
+    IMPLICIT NONE
+
+    INTENT(IN) :: y, hInno, T, Ny
+    INTENT(INOUT) :: VSLstream
+    INTENT(INOUT) :: h, hshock
+
+    INTEGER :: Ny, T, errcode, j, s, k
+    INTEGER, PARAMETER :: KSCmix = 7
+    DOUBLE PRECISION, DIMENSION(KSCmix), PARAMETER :: KSCmean = - 1.2704d0 + (/ -10.12999d0, -3.97281d0, -8.56686d0, 2.77786d0, .61942d0, 1.79518d0, -1.08819d0 /), KSCvar     = (/ 5.79596d0, 2.61369d0, 5.1795d0, .16735d0, .64009d0, .34023d0, 1.26261d0 /), KSCpdf= (/ .0073d0, .10556d0, .00002d0, .04395d0, .34001d0, .24566d0, .25750d0 /), KSCvol = sqrt(KSCvar)
+    DOUBLE PRECISION, DIMENSION(Ny,T,KSCmix) :: kai2CDF
+    INTEGER, DIMENSION(Ny,T) :: kai2states
+
+    DOUBLE PRECISION, DIMENSION(Ny,T) :: y, logy2, logy2star, volnoisemix, u
+
+    DOUBLE PRECISION, DIMENSION(0:T) :: h
+    DOUBLE PRECISION, DIMENSION(T) :: hshock
+    DOUBLE PRECISION, DIMENSION(Ny,T) :: dummynoise
+    DOUBLE PRECISION  :: hInno
+    DOUBLE PRECISION, PARAMETER  :: State0(1) = 0.0d0, sqrtV0(1) = 0.0d0
+
+    ! KSC state space
+    DOUBLE PRECISION :: a(T), b(T), c(Ny,1,T)
+
+    ! INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
+    TYPE (vsl_stream_state) :: VSLstream
+
+    ! log-linear observer
+    logy2 = log(y ** 2 + 0.001d0)
+
+    ! STEP 1 DRAW KAI2STATES
+      ! a) construct PDF for draws (stored in kai2CDF)
+    FORALL (s=1:KSCmix,k=1:Ny,j=1:T)
+       kai2CDF(k,j,s) = exp(-0.5d0 * ((logy2(k,j) - h(j) - KSCmean(s)) / KSCvol(s))** 2) / KSCvol(s) * KSCpdf(s)
+    END FORALL
+
+    ! b) convert PDF into CDF for draws
+    DO s=2,KSCmix
+       kai2CDF(:,:,s) = kai2CDF(:,:,s-1) + kai2CDF(:,:,s)
+    END DO
+    DO s=1,KSCmix-1
+       kai2CDF(:,:,s) = kai2CDF(:,:,s) / kai2CDF(:,:,KSCmix)
+    END DO
+    kai2CDF(:,:,KSCmix) = 1.0d0
+
+
+    ! c) draw kai2states
+    errcode = vdrnguniform(VSLmethodUniform, VSLstream, Ny * T, u, 0.0d0, 1.0d0 )
+    FORALL (k=1:Ny,j=1:T)
+       kai2states(k,j) = COUNT(u(k,j) > kai2CDF(k,j,:)) + 1
+    END FORALL
+    ! prepare initial trend variance and noise variance
+    FORALL (k=1:Ny,j=1:T)
+       volnoisemix(k,j) = KSCvol(kai2states(k,j))
+    END FORALL
+    ! demeaned observables 
+    FORALL(k=1:Ny,j=1:T)
+       logy2star(k,j) = logy2(k,j) - KSCmean(kai2states(k,j))
+    END FORALL
+
+    ! STEP 2: KALMAN FILTER FOR h
+    ! state space matrices
+    a = 1.0d0
+    b = hInno
+    C = 0.0d0
+    FORALL(k=1:Ny,j=1:T) C(k,1,j) = 1.0d0
+    
+  
+    CALL samplerA3B3C3noise(h,hshock,dummynoise,logy2star,T,Ny,1,1,a,b,c,volnoisemix,State0,sqrtV0,VSLstream,errcode)
+    if (errcode /= 0) then
+       print *, 'something off with KSC sampler', errcode
+       stop 1
+    end if
+
+
+  END SUBROUTINE commonstochvolRW
+
   ! @\newpage\subsection{SVHrwcor}@
   SUBROUTINE SVHrwcor(T, Nsv, SVol, h, hshock, y, sqrtVhshock, Eh0, sqrtVh0, VSLstream)
 
@@ -1274,7 +1731,7 @@ CONTAINS
 
     INTEGER :: s, j, k, T, Nsv,  errcode
     DOUBLE PRECISION :: sqrtVhshock(Nsv,Nsv), Eh0(Nsv), sqrtVh0(Nsv,Nsv)
-    INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
+    ! INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
     TYPE (vsl_stream_state) :: VSLstream
 
     ! KSC mixture
@@ -1370,7 +1827,7 @@ CONTAINS
 
     INTEGER :: i, k, T, Ny, Nslopes, offset, these
     DOUBLE PRECISION :: h(Ny,0:T), SVol(Ny,0:T), y(Ny,T), hInno(Ny), E0h(Ny), V0h(Ny), shockslopes(Nslopes)
-    INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
+    ! INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
     TYPE (vsl_stream_state) :: VSLstream
 
 
@@ -1415,7 +1872,7 @@ CONTAINS
 
     INTEGER :: i, k, T, Ny, Nslopes, offset, these
     DOUBLE PRECISION :: h(Ny,0:T), SVol(Ny,0:T), resid(Ny,T), y(Ny,T), E0slopes(Nslopes), iV0slopes(Nslopes, Nslopes), hInno(Ny), E0h(Ny), V0h(Ny), shockslopes(Nslopes)
-    INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
+    ! INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
     TYPE (vsl_stream_state) :: VSLstream
 
 
@@ -1463,7 +1920,7 @@ CONTAINS
 
     INTEGER :: i, k, T, Ny, Nslopes, offset, these
     DOUBLE PRECISION :: h(Ny,0:T), hshock(Ny,T), SVol(Ny,0:T), y(Ny,T), resid(Ny,T), E0slopes(Nslopes), iV0slopes(Nslopes, Nslopes), hrho(Ny), hInno(Ny), E0h(Ny), V0h(Ny), shockslopes(Nslopes)
-    INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
+    ! INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
     TYPE (vsl_stream_state) :: VSLstream
 
 
@@ -1510,7 +1967,7 @@ CONTAINS
 
     INTEGER :: i, k, T, Ny, Nslopes, offset, these
     DOUBLE PRECISION :: h(Ny,0:T), hshock(Ny,T), SVol(Ny,0:T), y(Ny,T), resid(Ny,T), hrho(Ny), hInno(Ny), E0h(Ny), V0h(Ny), shockslopes(Nslopes)
-    INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
+    ! INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
     TYPE (vsl_stream_state) :: VSLstream
 
 
@@ -1557,7 +2014,7 @@ CONTAINS
 
     INTEGER :: i, k, T, Ny, Nslopes, offset, these
     DOUBLE PRECISION :: h(Ny,0:T), hbar(Ny), hshock(Ny,T), SVol(Ny,0:T), y(Ny,T), resid(Ny,T), E0slopes(Nslopes), iV0slopes(Nslopes, Nslopes), hrho(Ny), hInno(Ny), E0h(Ny), V0h(Ny), shockslopes(Nslopes)
-    INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
+    ! INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
     TYPE (vsl_stream_state) :: VSLstream
 
 
@@ -1604,7 +2061,7 @@ CONTAINS
 
     INTEGER :: i, k, T, Ny, Nslopes, offset, these
     DOUBLE PRECISION :: h(Ny,0:T), hshock(Ny,T), SVol(Ny,0:T), y(Ny,T), resid(Ny,T), hrho(Ny), hInno(Ny), hbar(Ny), E0h(Ny), V0h(Ny), shockslopes(Nslopes)
-    INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
+    ! INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
     TYPE (vsl_stream_state) :: VSLstream
 
 
@@ -1651,7 +2108,7 @@ CONTAINS
 
     INTEGER :: i, s, j, k, T, Nsv, Nslopes, offset, these, errcode
     DOUBLE PRECISION :: E0slopes(Nslopes), iV0slopes(Nslopes, Nslopes), sqrtVhshock(Nsv,Nsv), Eh0(Nsv), sqrtVh0(Nsv,Nsv), shockslopes(Nslopes)
-    INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
+    ! INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
     TYPE (vsl_stream_state) :: VSLstream
 
     ! KSC mixture
@@ -1769,19 +2226,6 @@ CONTAINS
        stop 1
     end if
 
-    ! ! debug
-    ! call savemat(A(:,:,1), 'A.debug')
-    ! call savemat(B(:,:,1), 'B.debug')
-    ! call savemat(C(:,:,1), 'C.debug')
-    ! call savemat(State, 'State.debug')
-    ! call savemat(StateShock, 'StateShock.debug')
-    ! call savevec(State0, 'State0.debug')
-    ! call savemat(sqrtState0V, 'sqrtState0V.debug')
-    ! call savemat(logy2star, 'logy2star.debug')
-    ! call savemat(volnoisemix, 'volnoisemix.debug')
-    ! print *, 'rho', rho
-    ! stop 33
-
     h      = State(1:Nsv,:) + State(Nsv+1:Nsv*2,:)
     hshock = StateShock(1:Nsv,:) 
     hbar   = State(Nsv+1:Nsv*2,0)
@@ -1803,7 +2247,7 @@ CONTAINS
 
     INTEGER :: i, s, j, k, T, Nsv, Nslopes, offset, these, errcode
     DOUBLE PRECISION :: E0slopes(Nslopes), iV0slopes(Nslopes, Nslopes), sqrtVhshock(Nsv,Nsv), Eh0(Nsv), sqrtVh0(Nsv,Nsv), shockslopes(Nslopes)
-    INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
+    ! INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
     TYPE (vsl_stream_state) :: VSLstream
 
     ! KSC mixture
@@ -1902,6 +2346,132 @@ CONTAINS
        stop 1
     end if
 
+    ! again: get rid of redundancy
+    h      = State(1:Nsv,:)
+    hshock = StateShock(1:Nsv,:) 
+
+    SVol   = exp(h * 0.5d0)
+
+
+
+  END SUBROUTINE SVHcholKSCRWcor
+
+  ! @\newpage\subsection{SVHinvcholRWcor}@
+  SUBROUTINE SVHinvcholRWcor(T, Nsv, SVol, h, hshock, shockslopes, Nslopes, y, E0slopes, iV0slopes, sqrtVhshock, Eh0, sqrtVh0, VSLstream)
+
+    ! CCM style inverse choleski, A * resid = SV * z where A is unit-lowert-triangular
+
+    ! h = log(SVol ** 2)
+
+    INTENT(INOUT) :: SVol, VSLstream, y, h
+    INTENT(IN) :: T,Nsv, E0slopes, iV0slopes, sqrtVhshock, Eh0, sqrtVh0
+    INTENT(OUT) :: shockslopes, hshock
+
+    INTEGER :: i, s, j, k, T, Nsv, Nslopes, offset, these, errcode
+    DOUBLE PRECISION :: E0slopes(Nslopes), iV0slopes(Nslopes, Nslopes), sqrtVhshock(Nsv,Nsv), Eh0(Nsv), sqrtVh0(Nsv,Nsv), shockslopes(Nslopes)
+    ! INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
+    TYPE (vsl_stream_state) :: VSLstream
+
+    ! KSC mixture
+    INTEGER, PARAMETER :: KSCmix = 7
+    DOUBLE PRECISION, DIMENSION(KSCmix), PARAMETER :: KSCmean = - 1.2704d0 + (/ -10.12999d0, -3.97281d0, -8.56686d0, 2.77786d0, .61942d0, 1.79518d0, -1.08819d0 /), KSCvar     = (/ 5.79596d0, 2.61369d0, 5.1795d0, .16735d0, .64009d0, .34023d0, 1.26261d0 /), KSCpdf= (/ .0073d0, .10556d0, .00002d0, .04395d0, .34001d0, .24566d0, .25750d0 /), KSCvol = sqrt(KSCvar)
+    DOUBLE PRECISION, DIMENSION(Nsv,T,KSCmix) :: kai2CDF
+    INTEGER, DIMENSION(Nsv,T) :: kai2states
+
+
+    DOUBLE PRECISION, DIMENSION(T,Nsv) :: y
+    DOUBLE PRECISION, DIMENSION(Nsv,T) :: yresid, logy2, logy2star, volnoisemix, u
+    DOUBLE PRECISION, DIMENSION(Nsv,0:T) :: h
+    DOUBLE PRECISION, DIMENSION(Nsv,1:T) :: SVol
+    DOUBLE PRECISION, DIMENSION(Nsv,1:T) :: hshock
+
+    ! state space matrices
+    DOUBLE PRECISION :: A(Nsv,Nsv,T), B(Nsv,Nsv,T), C(Nsv,Nsv,T), y2noise(Nsv,T), State(Nsv,0:T), StateShock(Nsv,1:T), sqrtState0V(Nsv,Nsv), State0(Nsv)
+    DOUBLE PRECISION :: lhs(T), rhs(T,Nsv-1)
+
+    ! NOTE: V0slopes (and thus also iV0slopes) is assumed to be block-diagonal, with separate blocks for each regression
+
+    yresid = 0
+    yresid(1,:) = y(:,1)
+
+    ! PART 1: Shockslopes
+    offset = 0
+    DO i=2,Nsv
+       these = i - 1
+
+       FORALL (k=1:T) lhs(k)       = y(k,i) / SVol(i,k)
+       FORALL (k=1:T) rhs(k,1:i-1) = - y(k,1:these) / SVol(i,k) ! note the minus sign; this is on eof two differences with the "regular" choleski
+
+       ! slope indices are offset+1:offset+these
+       call bayesRegressionSlope(shockslopes(offset+1:offset+these), lhs, rhs(:,1:i-1), these, T, 1.0d0, E0slopes(offset+1:offset+these), iV0slopes(offset+1:offset+these,offset+1:offset+these), VSLstream)
+
+       FORALL (k=1:T) yresid(i,k) = lhs(k) * SVol(i,k)
+
+       offset = offset + these
+
+    END DO
+
+
+    ! PART 2: SV
+
+    ! log-linear observer
+    logy2 = log(yresid ** 2 + 0.001d0)
+
+    ! PART 2, STEP 1: DRAW KAI2STATES
+    ! a) construct PDF for draws (stored in kai2CDF)
+    FORALL (s=1:KSCmix,k=1:Nsv,j=1:T)
+       kai2CDF(k,j,s) = exp(-0.5d0 * ((logy2(k,j) - h(k,j) - KSCmean(s)) / KSCvol(s))** 2) / KSCvol(s) * KSCpdf(s)
+    END FORALL
+
+    ! b) convert PDF into CDF for draws
+    DO s=2,KSCmix
+       kai2CDF(:,:,s) = kai2CDF(:,:,s-1) + kai2CDF(:,:,s)
+    END DO
+    DO s=1,KSCmix-1
+       kai2CDF(:,:,s) = kai2CDF(:,:,s) / kai2CDF(:,:,KSCmix)
+    END DO
+    kai2CDF(:,:,KSCmix) = 1.0d0
+
+
+    ! c) draw kai2states
+    errcode = vdrnguniform(VSLmethodUniform, VSLstream, Nsv * T, u, 0.0d0, 1.0d0 )
+    FORALL (k=1:Nsv,j=1:T)
+       kai2states(k,j) = COUNT(u(k,j) > kai2CDF(k,j,:)) + 1
+    END FORALL
+
+
+    ! PART 2, STEP 2: KALMAN FILTER FOR h
+
+    ! prepare initial trend variance and noise variance
+    FORALL (k=1:Nsv,j=1:T)
+       volnoisemix(k,j) = KSCvol(kai2states(k,j))
+    END FORALL
+
+    ! demeaned observables 
+    FORALL(k=1:Nsv,j=1:T)
+       logy2star(k,j) = logy2(k,j) - KSCmean(kai2states(k,j))
+    END FORALL
+
+    ! state space matrices
+    A = 0.0d0
+    FORALL(k=1:Nsv,j=1:T) A(k,k,j) = 1.0d0
+
+    B = 0.0d0
+    FORALL(j=1:T) B(1:Nsv,1:Nsv,j) = sqrtVhshock
+
+    C = 0.0d0
+    FORALL(k=1:Nsv,j=1:T) C(k,k,j) = 1.0d0
+
+    ! note: redundancy with State0 sqrtState0V
+    State0      = Eh0
+    sqrtState0V = sqrtVh0
+
+    CALL samplerA3B3C3noise(State,StateShock,y2noise,logy2star,T,Nsv,Nsv,Nsv,A,B,C,volnoisemix,State0,sqrtState0V,VSLstream,errcode)
+    if (errcode /= 0) then
+       print *, 'something off with KSCvec sampler', errcode
+       stop 1
+    end if
+
     ! ! debug
     ! call savemat(A(:,:,1), 'A.debug')
     ! call savemat(B(:,:,1), 'B.debug')
@@ -1919,11 +2489,355 @@ CONTAINS
     h      = State(1:Nsv,:)
     hshock = StateShock(1:Nsv,:) 
 
-    SVol   = exp(h * 0.5d0)
+    SVol   = exp(h(:,1:T) * 0.5d0)
 
 
 
-  END SUBROUTINE SVHcholKSCRWcor
+  END SUBROUTINE SVHinvcholRWcor
+
+  ! @\newpage\subsection{SVOinvcholRWcor}@
+  SUBROUTINE SVOinvcholRWcor(T, Nsv, SVol, h, hshock, shockslopes, Nslopes, svolog2scale, svoprob, y, E0slopes, iV0slopes, sqrtVhshock, Eh0, sqrtVh0, SVOprioralpha, SVOpriorbeta, SVOngrid, SVOgrid, VSLstream)
+
+    ! CCM style inverse choleski, A * resid = SV * z where A is unit-lowert-triangular
+
+    INTENT(INOUT) :: SVol, h, VSLstream
+    INTENT(IN) :: y
+    INTENT(IN) :: T,Nsv, E0slopes, iV0slopes, sqrtVhshock, Eh0, sqrtVh0
+    INTENT(OUT) :: shockslopes, hshock
+
+    INTEGER :: i, s, j, k, T, Nsv, Nslopes, offset, these, errcode
+
+    double precision, intent(in), dimension(Nsv) :: SVOprioralpha, SVOpriorbeta
+    double precision, intent(inout), dimension(Nsv) :: SVOprob
+    double precision, intent(inout), dimension(Nsv,T) :: SVOlog2scale ! log2values
+    integer, intent(in) :: SVOngrid
+    type(SVOgridspace(SVOngrid)), intent(in) :: SVOgrid
+
+
+
+
+    DOUBLE PRECISION :: E0slopes(Nslopes), iV0slopes(Nslopes, Nslopes), sqrtVhshock(Nsv,Nsv), Eh0(Nsv), sqrtVh0(Nsv,Nsv), shockslopes(Nslopes)
+    ! INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
+    TYPE (vsl_stream_state) :: VSLstream
+
+    ! KSC mixture
+    INTEGER, PARAMETER :: KSCmix = 7
+    DOUBLE PRECISION, DIMENSION(KSCmix), PARAMETER :: KSCmean = - 1.2704d0 + (/ -10.12999d0, -3.97281d0, -8.56686d0, 2.77786d0, .61942d0, 1.79518d0, -1.08819d0 /), KSCvar     = (/ 5.79596d0, 2.61369d0, 5.1795d0, .16735d0, .64009d0, .34023d0, 1.26261d0 /), KSCpdf= (/ .0073d0, .10556d0, .00002d0, .04395d0, .34001d0, .24566d0, .25750d0 /), KSCvol = sqrt(KSCvar)
+    DOUBLE PRECISION, DIMENSION(Nsv,T,KSCmix) :: kai2CDF
+    INTEGER, DIMENSION(Nsv,T) :: kai2states
+
+    ! outlier
+    double precision, dimension(Nsv, T, SVOngrid) :: SVOkernel
+    double precision, dimension(Nsv, SVOngrid) :: outlierpdf
+    integer, dimension(Nsv, T) :: SVOndx 
+    integer, dimension(Nsv)    :: Noutlier
+    double precision, dimension(Nsv) :: posterioralpha, posteriorbeta
+
+    ! other
+    DOUBLE PRECISION, DIMENSION(T,Nsv) :: y
+    DOUBLE PRECISION, DIMENSION(Nsv,T) :: yresid, logy2, logy2star, volnoisemix, meannoisemix, u
+    DOUBLE PRECISION, DIMENSION(Nsv,0:T) :: h
+    DOUBLE PRECISION, DIMENSION(Nsv,1:T) :: SVol
+    DOUBLE PRECISION, DIMENSION(Nsv,1:T) :: hshock
+
+    ! state space matrices
+    DOUBLE PRECISION :: A(Nsv,Nsv,T), B(Nsv,Nsv,T), C(Nsv,Nsv,T), y2noise(Nsv,T) !, State(Nsv,0:T), StateShock(Nsv,1:T) ! , sqrtState0V(Nsv,Nsv), State0(Nsv)
+    DOUBLE PRECISION :: lhs(T), rhs(T,Nsv-1)
+
+    ! NOTE: V0slopes (and thus also iV0slopes) is assumed to be block-diagonal, with separate blocks for each regression
+
+    yresid = 0
+    yresid(1,:) = y(:,1)
+
+    ! PART 1: Shockslopes
+    offset = 0
+    DO i=2,Nsv
+       these = i - 1
+
+       FORALL (k=1:T) lhs(k)         =   y(k,i)       / SVol(i,k)
+       FORALL (k=1:T) rhs(k,1:these) = - y(k,1:these) / SVol(i,k) ! note the minus sign; this is one of two differences with the "regular" choleski
+
+       ! slope indices are offset+1:offset+these
+       call bayesRegressionSlope(shockslopes(offset+1:offset+these), lhs, rhs(:,1:these), these, T, 1.0d0, E0slopes(offset+1:offset+these), iV0slopes(offset+1:offset+these,offset+1:offset+these), VSLstream)
+       ! call bayesDiffuseRegressionSlope(shockslopes(offset+1:offset+these), lhs, rhs(:,1:these), these, T, 1.0d0, VSLstream)
+
+       FORALL (k=1:T) yresid(i,k) = lhs(k) * SVol(i,k)
+
+       offset = offset + these
+
+    END DO
+
+    ! PART 2: SV
+
+    ! log-linear observer
+    logy2 = log(yresid ** 2 + 0.001d0)
+
+    ! PART 2, STEP 1: DRAW KAI2STATES
+    ! a) construct PDF for draws (stored in kai2CDF)
+    FORALL (s=1:KSCmix,k=1:Nsv,j=1:T)
+       kai2CDF(k,j,s) = exp(-0.5d0 * ((logy2(k,j) - h(k,j) - SVOlog2scale(k,j) - KSCmean(s)) / KSCvol(s))** 2) / KSCvol(s) * KSCpdf(s)
+    END FORALL
+
+    ! b) convert PDF into CDF for draws
+    DO s=2,KSCmix
+       kai2CDF(:,:,s) = kai2CDF(:,:,s-1) + kai2CDF(:,:,s)
+    END DO
+    DO s=1,KSCmix-1
+       kai2CDF(:,:,s) = kai2CDF(:,:,s) / kai2CDF(:,:,KSCmix)
+    END DO
+    kai2CDF(:,:,KSCmix) = 1.0d0
+
+
+    ! c) draw kai2states
+    errcode = vdrnguniform(VSLmethodUniform, VSLstream, Nsv * T, u, 0.0d0, 1.0d0 )
+    FORALL (k=1:Nsv,j=1:T)
+       kai2states(k,j) = COUNT(u(k,j) > kai2CDF(k,j,:)) + 1
+    END FORALL
+
+
+    ! PART 2, STEP 2: KALMAN FILTER FOR h
+
+    ! prepare noise variance
+    FORALL (k=1:Nsv,j=1:T)
+       volnoisemix(k,j) = KSCvol(kai2states(k,j))
+    END FORALL
+    FORALL (k=1:Nsv,j=1:T)
+       meannoisemix(k,j) = KSCmean(kai2states(k,j))
+    END FORALL
+
+    ! demeaned observables 
+    FORALL(k=1:Nsv,j=1:T)
+       logy2star(k,j) = logy2(k,j) - meannoisemix(k,j) - SVOlog2scale(k,j)
+    END FORALL
+
+    ! state space matrices
+    A = 0.0d0
+    FORALL(k=1:Nsv,j=1:T) A(k,k,j) = 1.0d0
+
+    B = 0.0d0
+    FORALL(j=1:T) B(:,:,j) = sqrtVhshock
+
+    C = 0.0d0
+    FORALL(k=1:Nsv,j=1:T) C(k,k,j) = 1.0d0
+
+    CALL samplerA3B3C3noise(h,hshock,y2noise,logy2star,T,Nsv,Nsv,Nsv,A,B,C,volnoisemix,Eh0,sqrtVh0,VSLstream,errcode)
+    if (errcode /= 0) then
+       print *, 'something off with samplerA3B3C3noise output', errcode
+       stop 1
+    end if
+    ! note: y2noise is just a dummy
+
+    ! PART 3: outliers
+    ! probability of each outlier state
+    s = 1
+    FORALL (k=1:Nsv)               outlierPdf(k,s) = 1.0d0 - SVOprob(k)
+    FORALL (k=1:Nsv,s=2:SVOngrid)  outlierPdf(k,s) = SVOprob(k) / dble(SVOngrid - 1)
+
+    ! construct PDFkernel
+    FORALL (k=1:Nsv,j=1:T,s=1:SVOngrid)
+       SVOkernel(k,j,s) = exp(-0.5d0 * ((logy2(k,j) - meannoisemix(k,j) - h(k,j) - SVOgrid%log2values(s)) / volnoisemix(k,j))** 2) * outlierPdf(k,s) ! note:  division " / volnoisemix(k,j) " is irrelevant for Kernel since independent of s
+    END FORALL
+    ! convert into CDF
+    DO s=2,SVOngrid
+       SVOkernel(:,:,s) = SVOkernel(:,:,s-1) + SVOkernel(:,:,s)
+    END DO
+    DO s=1,SVOngrid-1
+       SVOkernel(:,:,s) = SVOkernel(:,:,s) / SVOkernel(:,:,SVOngrid)
+    END DO
+    SVOkernel(:,:,SVOngrid) = 1.0d0
+    ! draw outlier states
+    errcode = vdrnguniform(VSLmethodUniform, VSLstream, Nsv * T, u, 0.0d0, 1.0d0 )
+    FORALL (k=1:Nsv,j=1:T)
+       SVOndx(k,j)       = COUNT(u(k,j) > SVOkernel(k,j,:)) + 1
+       SVOlog2scale(k,j) = SVOgrid%log2values(SVOndx(k,j))
+    END FORALL
+
+    !  update outlierProb
+    Noutlier       = count(SVOndx .gt. 1, 2)
+    posterioralpha = SVOprioralpha + dble(Noutlier)
+    posteriorbeta  = SVOpriorbeta  + dble(T - Noutlier)
+
+    if (any(Noutlier .gt. T)) then
+       call savemat(dble(SVOndx), 'SVOndx.debug')
+       call savevec(dble(Noutlier), 'Noutlier.debug')
+       call savevec(posterioralpha, 'alpha.debug')
+       call savevec(posteriorbeta, 'beta.debug')
+       call savevec(SVOprioralpha, 'alphaprior.debug')
+       call savevec(SVOpriorbeta, 'betaprior.debug')
+       print *, 'houston'
+       stop 11
+    end if
+
+    ! posterior draws from beta
+    SVOprob = vslBetaDraws(posterioralpha, posteriorbeta, Nsv, VSLstream)
+
+    ! FINISH: putting it all together
+    SVol = exp(0.5d0 * (h(:,1:T) + SVOlog2scale))
+
+  END SUBROUTINE SVOinvcholRWcor
+
+  ! @\newpage\subsection{SVtinvcholRWcor}@
+  SUBROUTINE SVtinvcholRWcor(T, Nsv, SVol, h, hshock, shockslopes, Nslopes, svtscalelog2, svtdof, y, E0slopes, iV0slopes, sqrtVhshock, Eh0, sqrtVh0, tdofMin, tdofMax, tdoflogprior, tdofloglike0, VSLstream)
+
+    ! CCM style inverse choleski, A * resid = SV * z where A is unit-lowert-triangular
+
+    INTENT(INOUT) :: SVol, h, VSLstream
+    INTENT(IN) :: y
+    INTENT(IN) :: T,Nsv, E0slopes, iV0slopes, sqrtVhshock, Eh0, sqrtVh0
+    INTENT(OUT) :: shockslopes, hshock
+
+    INTEGER :: i, s, j, k, T, Nsv, Nslopes, offset, these, errcode
+
+    DOUBLE PRECISION :: E0slopes(Nslopes), iV0slopes(Nslopes, Nslopes), sqrtVhshock(Nsv,Nsv), Eh0(Nsv), sqrtVh0(Nsv,Nsv), shockslopes(Nslopes)
+    TYPE (vsl_stream_state) :: VSLstream
+
+    ! KSC mixture
+    INTEGER, PARAMETER :: KSCmix = 7
+    DOUBLE PRECISION, DIMENSION(KSCmix), PARAMETER :: KSCmean = - 1.2704d0 + (/ -10.12999d0, -3.97281d0, -8.56686d0, 2.77786d0, .61942d0, 1.79518d0, -1.08819d0 /), KSCvar     = (/ 5.79596d0, 2.61369d0, 5.1795d0, .16735d0, .64009d0, .34023d0, 1.26261d0 /), KSCpdf= (/ .0073d0, .10556d0, .00002d0, .04395d0, .34001d0, .24566d0, .25750d0 /), KSCvol = sqrt(KSCvar)
+    DOUBLE PRECISION, DIMENSION(Nsv,T,KSCmix) :: kai2CDF
+    INTEGER, DIMENSION(Nsv,T) :: kai2states
+
+    ! t-scale
+    integer, intent(in) :: tdofMin, tdofMax
+    double precision, dimension(tdofMin:tdofMax), intent(in) :: tdoflogprior, tdofloglike0 ! note: could also pass sum of both, done this way for better redability
+    double precision, dimension(Nsv,T), intent(inout) :: svtscalelog2
+    double precision, dimension(Nsv), intent(inout)   :: svtdof
+    double precision, dimension(T,Nsv) :: chi2draws ! mind the transpose for better call to rng
+    double precision, dimension(Nsv,tdofMin:tdofMax) :: tdoflike
+    double precision, dimension(Nsv) :: maxllf
+    double precision, dimension(Nsv) :: utdof
+    integer :: Ntdofgrid
+
+    ! other
+    DOUBLE PRECISION, DIMENSION(T,Nsv) :: y
+    DOUBLE PRECISION, DIMENSION(Nsv,T) :: yresid, logy2, y2scaled, logy2star, volnoisemix, meannoisemix, u
+    DOUBLE PRECISION, DIMENSION(Nsv,0:T) :: h
+    DOUBLE PRECISION, DIMENSION(Nsv,1:T) :: SVol
+    DOUBLE PRECISION, DIMENSION(Nsv,1:T) :: hshock
+
+    ! state space matrices
+    DOUBLE PRECISION :: A(Nsv,Nsv,T), B(Nsv,Nsv,T), C(Nsv,Nsv,T), y2noise(Nsv,T) 
+    DOUBLE PRECISION :: lhs(T), rhs(T,Nsv-1)
+
+    yresid = 0
+    yresid(1,:) = y(:,1)
+
+    ! PART 1: Shockslopes
+    offset = 0
+    DO i=2,Nsv
+       these = i - 1
+
+       FORALL (k=1:T) lhs(k)         =   y(k,i)       / SVol(i,k)
+       FORALL (k=1:T) rhs(k,1:these) = - y(k,1:these) / SVol(i,k) ! note the minus sign; this is one of two differences with the "regular" choleski
+
+       ! slope indices are offset+1:offset+these
+       call bayesRegressionSlope(shockslopes(offset+1:offset+these), lhs, rhs(:,1:these), these, T, 1.0d0, E0slopes(offset+1:offset+these), iV0slopes(offset+1:offset+these,offset+1:offset+these), VSLstream)
+       ! call bayesDiffuseRegressionSlope(shockslopes(offset+1:offset+these), lhs, rhs(:,1:these), these, T, 1.0d0, VSLstream)
+
+       FORALL (k=1:T) yresid(i,k) = lhs(k) * SVol(i,k)
+
+       offset = offset + these
+
+    END DO
+
+    ! PART 2: tdof and tscale
+    y2scaled = (yresid ** 2) * exp(-h(:,1:T))
+
+    ! tdof inference
+    Ntdofgrid = tdofMax - tdofMin + 1
+    do i=tdofMin,tdofMax
+          tdoflike(:,i) = tdofLogprior(i) + tdofloglike0(i) - 0.5d0 * dble(i + 1) * sum(log(y2scaled + dble(i)), 2)
+    end do
+    ! normalize
+    maxllf = maxval(tdoflike, 2)
+    forall (k=1:Nsv,i=tdofMin:tdofMax) tdoflike(k,i) = tdoflike(k,i) - maxllf(k)
+    ! convert into cdf
+    tdoflike = exp(tdoflike)
+    do i=tdofMin+1,tdofMax
+       tdoflike(:,i) = tdoflike(:,i) + tdoflike(:,i - 1)
+    end do
+    forall (k=1:Nsv,i=tdofMin:tdofMax-1) tdoflike(k,i) = tdoflike(k,i) / tdoflike(k,tdofMax) 
+    tdoflike(:,tdofMax) = 1.0d0
+
+    ! draw tdof 
+    errcode = vdrnguniform(VSLmethodUniform, VSLstream, Nsv, utdof, 0.0d0, 1.0d0 )
+    FORALL (k=1:Nsv)
+       svtdof(k) = (COUNT(utdof(k) > tdoflike(k,:)) + 1) + (tdofMin - 1)
+    END FORALL
+
+
+    ! draw posterior of IG/Chi2 draws
+    forall (k=1:Nsv,j=1:T)  y2scaled(k,j) = svtdof(k) + 1.0d0 + y2scaled(k,j)
+    do k=1,Nsv
+       errcode    = vdrngchisquare(VSLmethodChisquare, VSLstream, T, chi2draws(:,k), int(svtdof(k)) + 1) ! note: conversion to integer
+    end do
+    svtscalelog2 = log(y2scaled) - log(transpose(chi2draws)) ! note transpose of chi2draws    
+
+
+    ! PART 3: SV
+
+    ! log-linear observer
+    logy2 = log(yresid ** 2 + 0.001d0)
+
+    ! PART 2, STEP 1: DRAW KAI2STATES
+    ! a) construct PDF for draws (stored in kai2CDF)
+    FORALL (s=1:KSCmix,k=1:Nsv,j=1:T)
+       kai2CDF(k,j,s) = exp(-0.5d0 * ((logy2(k,j) - h(k,j) - svtscalelog2(k,j) - KSCmean(s)) / KSCvol(s))** 2) / KSCvol(s) * KSCpdf(s)
+    END FORALL
+
+    ! b) convert PDF into CDF for draws
+    DO s=2,KSCmix
+       kai2CDF(:,:,s) = kai2CDF(:,:,s-1) + kai2CDF(:,:,s)
+    END DO
+    DO s=1,KSCmix-1
+       kai2CDF(:,:,s) = kai2CDF(:,:,s) / kai2CDF(:,:,KSCmix)
+    END DO
+    kai2CDF(:,:,KSCmix) = 1.0d0
+
+
+    ! c) draw kai2states
+    errcode = vdrnguniform(VSLmethodUniform, VSLstream, Nsv * T, u, 0.0d0, 1.0d0 )
+    FORALL (k=1:Nsv,j=1:T)
+       kai2states(k,j) = COUNT(u(k,j) > kai2CDF(k,j,:)) + 1
+    END FORALL
+
+
+    ! PART 2, STEP 2: KALMAN FILTER FOR h
+
+    ! prepare noise variance
+    FORALL (k=1:Nsv,j=1:T)
+       volnoisemix(k,j) = KSCvol(kai2states(k,j))
+    END FORALL
+    FORALL (k=1:Nsv,j=1:T)
+       meannoisemix(k,j) = KSCmean(kai2states(k,j))
+    END FORALL
+
+    ! demeaned observables 
+    FORALL(k=1:Nsv,j=1:T)
+       logy2star(k,j) = logy2(k,j) - meannoisemix(k,j) - svtscalelog2(k,j)
+    END FORALL
+
+    ! state space matrices
+    A = 0.0d0
+    FORALL(k=1:Nsv,j=1:T) A(k,k,j) = 1.0d0
+
+    B = 0.0d0
+    FORALL(j=1:T) B(:,:,j) = sqrtVhshock
+
+    C = 0.0d0
+    FORALL(k=1:Nsv,j=1:T) C(k,k,j) = 1.0d0
+
+    CALL samplerA3B3C3noise(h,hshock,y2noise,logy2star,T,Nsv,Nsv,Nsv,A,B,C,volnoisemix,Eh0,sqrtVh0,VSLstream,errcode)
+    if (errcode /= 0) then
+       print *, 'something off with samplerA3B3C3noise output', errcode
+       stop 1
+    end if
+    ! note: y2noise is just a dummy
+
+    ! FINISH: putting it all together
+    SVol = exp(0.5d0 * (h(:,1:T) + svtscalelog2))
+
+  END SUBROUTINE SVtinvcholRWcor
 
 
   ! @\newpage\subsection{SVHcholKSCAR1cor}@
@@ -1940,7 +2854,7 @@ CONTAINS
     INTEGER :: i, s, j, k, T, Nsv, Nslopes, offset, these, errcode
     DOUBLE PRECISION :: rho(Nsv)
     DOUBLE PRECISION :: E0slopes(Nslopes), iV0slopes(Nslopes, Nslopes), sqrtVhshock(Nsv,Nsv), Eh0(Nsv), sqrtVh0(Nsv,Nsv), shockslopes(Nslopes)
-    INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
+    ! INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
     TYPE (vsl_stream_state) :: VSLstream
 
     ! KSC mixture
@@ -2095,7 +3009,7 @@ CONTAINS
 
     INTEGER :: i, s, j, k, T, Nsv, Nslopes, offset, these, errcode
     DOUBLE PRECISION :: sqrtVhshock(Nsv,Nsv), Eh0(Nsv), sqrtVh0(Nsv,Nsv), shockslopes(Nslopes)
-    INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
+    ! INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
     TYPE (vsl_stream_state) :: VSLstream
 
     ! KSC mixture
@@ -2249,7 +3163,7 @@ CONTAINS
     DOUBLE PRECISION :: V0i, Vi
     DOUBLE PRECISION ::    b, b0, bdraw, edraw(1)
     DOUBLE PRECISION :: h, y(T), x(T)
-    INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
+    ! INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
     TYPE (vsl_stream_state) :: VSLstream
 
 
@@ -2288,7 +3202,7 @@ CONTAINS
     DOUBLE PRECISION :: variancedraw, sigmaT0, sigmaT
     DOUBLE PRECISION :: z(1+T+dof0)
     DOUBLE PRECISION :: y(T), x(T), sxx2
-    INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
+    ! INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
     TYPE (vsl_stream_state) :: VSLstream
 
 
@@ -2333,7 +3247,7 @@ CONTAINS
     DOUBLE PRECISION, DIMENSION(Nx,Nx) :: V0i, Vi
     DOUBLE PRECISION, DIMENSION(Nx) ::    b, b0, bdraw
     DOUBLE PRECISION :: h, y(T), X(T,Nx)
-    INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
+    ! INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
     TYPE (vsl_stream_state) :: VSLstream
 
 
@@ -2347,8 +3261,16 @@ CONTAINS
     Vi = V0i
     call DSYRK('U', 'T', Nx, T, h, X, T, 1.0d0, Vi, Nx)
 
-    ! solve: Vi * b = inv(V0) * b0 + X'y * h
-    call choleski(Vi) ! needed for inverting Vi as well as for draws, see below
+    ! solve: Vi * b = b
+    ! call choleski(Vi) ! needed for inverting Vi as well as for draws, see below
+    ! factorize
+    call dpotrf('U', Nx, Vi, Nx, status)
+    if (status /= 0) then
+       write(*,*) 'DPOTRF error: ', status, ' [BAYESREGRESSIONSLOPE]'
+       call savemat(Vi, 'Vi.debug')
+       stop 1
+    end if
+    ! invert to solve for posterior
     call DPOTRS('U', Nx, 1, Vi, Nx, b, Nx, status)
     if (status /= 0) then
        write(*,*) 'DPOTRS error: ', status, ' [BAYESREGRESSIONSLOPE]'
@@ -2372,7 +3294,7 @@ CONTAINS
 
   ! @\newpage\subsection{bayesDiffuseRegressionSlope}@
   SUBROUTINE bayesDiffuseRegressionSlope(bdraw, y, X, Nx, T, h, VSLstream)
-    ! draws vestor of regression slopes from Bayesian Regression 
+    ! draws vector of regression slopes from Bayesian Regression 
     ! of scalar y on Vector X
     ! on exit, y return residuals
 
@@ -2384,7 +3306,7 @@ CONTAINS
     DOUBLE PRECISION, DIMENSION(Nx,Nx) :: Vi
     DOUBLE PRECISION, DIMENSION(Nx) ::    b, bdraw
     DOUBLE PRECISION :: h, y(T), X(T,Nx)
-    INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
+    ! INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
     TYPE (vsl_stream_state) :: VSLstream
 
 
@@ -2436,7 +3358,7 @@ CONTAINS
     DOUBLE PRECISION, DIMENSION(N,N) :: rhoV0i, rhoVi, sqrtVshock, H, Hchol, XX
     DOUBLE PRECISION, DIMENSION(N) ::   rho, rhodraw, rho0
     DOUBLE PRECISION, DIMENSION(N,T) :: y, ylag, ytilde
-    INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
+    ! INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
     TYPE (vsl_stream_state) :: VSLstream
 
     ! NOTE: sqrtVshock is assumed to be UPPER triangular-right Choleski
@@ -2558,7 +3480,7 @@ CONTAINS
     DOUBLE PRECISION, DIMENSION(Ny * Ny * p,Ny * Ny * p) :: V0i, Vi
     DOUBLE PRECISION, DIMENSION(Ny * Ny * p) ::    b, b0, bdraw
     DOUBLE PRECISION :: iSigmaResid(Ny,Ny), Y(T,Ny), ebar(T,Ny), Ydata(-(p-1):T,Ny), X(T,Ny * p), XX(Ny * p, Ny * p), Xy(Ny * p, Ny), tmp(Ny * p, Ny)
-    INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
+    ! INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
     TYPE (vsl_stream_state) :: VSLstream
 
     ! STEP 1: construct regressors
@@ -2610,7 +3532,7 @@ CONTAINS
        stop 1
     end if
 
-    ! zero our lower triangular
+    ! zero out lower triangular
     forall (j = 1 : Nb-1) Vi(j+1:Nb,j) = 0.0d0
 
     ! 2) solve Vi * b = z
@@ -2654,7 +3576,7 @@ CONTAINS
     DOUBLE PRECISION, DIMENSION(Ny * Ny * p) ::    b, b0, bdraw
     DOUBLE PRECISION :: iSigmaResid(Ny,Ny,T), Y(T,Ny), Ytilde(T,Ny), Ydata(-(p-1):T,Ny), X(T,Ny * p), XX(Ny * p, Ny * p), XY(Ny * p, Ny)
     DOUBLE PRECISION :: ebar(T,Ny)
-    INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
+    ! INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
     TYPE (vsl_stream_state) :: VSLstream
 
     ! STEP 1: construct regressors
@@ -2754,7 +3676,7 @@ CONTAINS
     DOUBLE PRECISION, DIMENSION(Ny * Ny * p,Ny * Ny * p) :: V0i, Vi
     DOUBLE PRECISION, DIMENSION(Ny * Ny * p) ::    b, b0, bdraw
     DOUBLE PRECISION :: iSigmaResid(Ny,Ny), Y(T,Ny), Ydata(-(p-1):T,Ny), X(T,Ny * p), XX(Ny * p, Ny * p), Xy(Ny * p, Ny), tmp(Ny * p, Ny)
-    INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
+    ! INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
     TYPE (vsl_stream_state) :: VSLstream
 
     ! STEP 1: construct regressors
@@ -2805,7 +3727,7 @@ CONTAINS
        stop 1
     end if
 
-    ! zero our lower triangular
+    ! zero out lower triangular
     forall (j = 1 : Nb-1) Vi(j+1:Nb,j) = 0.0d0
 
     ! 2) solve Vi * b = z
@@ -2844,7 +3766,7 @@ CONTAINS
     DOUBLE PRECISION, DIMENSION(Ny * Ny * p,Ny * Ny * p) :: Vi
     DOUBLE PRECISION, DIMENSION(Ny * Ny * p) ::    b, bdraw
     DOUBLE PRECISION :: iSigmaResid(Ny,Ny), Y(T,Ny), Ydata(-(p-1):T,Ny), X(T,Ny * p), XX(Ny * p, Ny * p), Xy(Ny * p, Ny), tmp(Ny * p, Ny)
-    INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
+    ! INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
     TYPE (vsl_stream_state) :: VSLstream
 
     ! STEP 1: construct regressors
@@ -2895,7 +3817,7 @@ CONTAINS
        stop 1
     end if
 
-    ! zero our lower triangular
+    ! zero out lower triangular
     forall (j = 1 : Nb-1) Vi(j+1:Nb,j) = 0.0d0
 
     ! 2) solve Vi * b = z
@@ -2921,6 +3843,107 @@ CONTAINS
   END SUBROUTINE bayesdiffuseVAR
 
 
+  ! @\newpage\subsection{bayesVARscaleSV}@
+  SUBROUTINE bayesVARscaleSV(bdraw, Y, p, Ydata, Ny, T, scaleSV, iSigmaResid, b0, V0i, VSLstream)
+    ! Bayesian VAR (assuming no constant)
+    ! on exit, Y returns residuals Y - X * reshape(bdraw, Nx, Ny)
+    ! notice: top rows of companion have transpose(reshape(bdraw,Nx,Ny)) 
+    ! only upper triangular part of iSigmaResid will be used
+    ! scale SV assumes common scale factor for all equations
+
+    ! NOTE: returns scaled residuals (i.e. after division by scaleSV)
+
+    INTENT(IN) :: Ydata, Ny, p, T, iSigmaResid, b0, V0i, scaleSV
+    INTENT(OUT) :: Y, bdraw
+    INTENT(INOUT) :: VSLstream
+    INTEGER :: T, Nx, Ny, status, Nb, j, tt, p
+    DOUBLE PRECISION, DIMENSION(Ny * Ny * p,Ny * Ny * p) :: V0i, Vi
+    DOUBLE PRECISION, DIMENSION(Ny * Ny * p) ::    b, b0, bdraw
+    DOUBLE PRECISION :: iSigmaResid(Ny,Ny), Y(T,Ny), Ydata(-(p-1):T,Ny), X(T,Ny * p), XX(Ny * p, Ny * p), Xy(Ny * p, Ny), tmp(Ny * p, Ny)
+    DOUBLE PRECISION :: scaleSV(T)
+    ! INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
+    TYPE (vsl_stream_state) :: VSLstream
+
+    ! STEP 1: construct regressors
+
+    Y  = Ydata(1:T,:)
+    Nx = Ny * p
+    Nb = Ny * Nx
+    FORALL (j = 1:p) X(:, ((j-1) * Ny + 1) : ((j-1) * Ny + Ny) ) = Ydata(-(j-1):T-j,:)
+
+    ! STEP 2: scale equations
+    forall (tt=1:T,j=1:Ny) Y(tt,j) = Y(tt,j) / scaleSV(tt)
+    forall (tt=1:T,j=1:Nx) X(tt,j) = X(tt,j) / scaleSV(tt)
+
+
+    ! STEP 3: estimate VAR coefficients: beta = inv(XX) * Xy
+    ! XY = X'Y * iSigmaResid
+    call DGEMM('T', 'N', Nx, Ny, T, 1.0d0, X, T, Y, T, 0.0d0, tmp, Nx)
+    call DSYMM('R', 'U', Nx, Ny, 1.0d0, iSigmaResid, Ny, tmp, Nx, 0.0d0, XY, Nx)
+
+    ! store vec(XY) in b
+    call vec(b,XY)
+
+    ! b = V0i * b0 + b 
+    ! (not yet complete, need to multiply by posterior Variance, see below)
+    call DSYMV('U', Nb, 1.0d0, V0i, Nb, b0, 1, 1.0d0, b, 1)
+
+    ! POSTERIOR VARIANCE
+    ! Vi = V0i + kron(iSigmaResid, X'X)
+
+    call XprimeX(XX,X)
+    call symmetric(XX) ! important for symkronecker
+    Vi = V0i
+    call symkronecker(1.0d0,iSigmaResid,Ny,XX,Nx,1.0d0,Vi)
+
+    ! Solve for posterior mean
+    ! solve: Vi * b = ...
+    ! 1) Choleski factorization
+    call dpotrf('u', Nb, Vi, Nb, status)
+    if (status /= 0) then
+       write(*,*) 'CHOLESKI ERROR:', status, ' [BAYESVARSCALESV]'
+
+       call savemat(iSigmaResid, 'iSigmaResid.dat.debug') ! debug
+       call savemat(V0i, 'V0i.dat.debug') ! debug
+       call savemat(Vi, 'Vi.dat.debug') ! debug
+       call savevec(b0, 'b0.dat.debug') ! debug
+       call savevec(b, 'b.dat.debug') ! debug
+       call savemat(X, 'X.dat.debug') ! debug
+       call savemat(Y, 'Y.dat.debug') ! debug
+
+
+       stop 1
+    end if
+
+    ! zero out lower triangular
+    forall (j = 1 : Nb-1) Vi(j+1:Nb,j) = 0.0d0
+
+    ! 2) solve Vi * b = z
+    call DPOTRS('U', Nb, 1, Vi, Nb, b, Nb, status)
+    if (status /= 0) then
+       write(*,*) 'DPOTRS error: ', status, ' [BAYESVARSCALESV]'
+       stop 1
+    end if
+
+    ! DRAW FROM POSTERIOR with mean b and inverse variance Vi 
+    ! notice: I am not scaling the draw)' * chol(Vi), i.e. chol is upper triangular)
+    status  = vdrnggaussian(VSLmethodGaussian, VSLstream, Nb, bdraw, 0.0d0, 1.0d0)
+    call DTRSV('U', 'N', 'N', Nb, Vi, Nb, bdraw, 1)
+
+    ! add posterior mean
+    bdraw = bdraw + b 
+
+    ! resid = Y - X * reshape(beta, Nx, Ny)
+    ! note: DGEMM does not care about explicitly reshaping beta
+    call DGEMM('N','N',T,Ny,Nx,-1.0d0,X,T,bdraw,Nx,1.0d0,Y,T)
+
+
+    ! FOR NOW: do not rescale residuals
+    ! ! finally: rescale residuals
+    ! forall (tt=1:T,j=1:Ny) Y(tt,j) = Y(tt,j) * scaleSV(tt)
+
+  END SUBROUTINE bayesVARscaleSV
+
   ! @\newpage\subsection{bayesVARSV}@
   SUBROUTINE bayesVARSV(bdraw, Y, p, Ydata, Ny, T, iSigmaResid, b0, V0i, VSLstream)
     ! Bayesian VAR with (known) Time-varying Volatility
@@ -2936,7 +3959,7 @@ CONTAINS
     DOUBLE PRECISION, DIMENSION(Ny * Ny * p,Ny * Ny * p) :: V0i, Vi
     DOUBLE PRECISION, DIMENSION(Ny * Ny * p) ::    b, b0, bdraw
     DOUBLE PRECISION :: iSigmaResid(Ny,Ny,T), Y(T,Ny), Ytilde(T,Ny), Ydata(-(p-1):T,Ny), X(T,Ny * p), XX(Ny * p, Ny * p), XY(Ny * p, Ny)
-    INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
+    ! INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
     TYPE (vsl_stream_state) :: VSLstream
 
     ! STEP 1: construct regressors
@@ -3044,7 +4067,7 @@ CONTAINS
     DOUBLE PRECISION, DIMENSION(Ny * Ny * p,Ny * Ny * p) :: Vi
     DOUBLE PRECISION, DIMENSION(Ny * Ny * p) ::    b, bdraw
     DOUBLE PRECISION :: iSigmaResid(Ny,Ny,T), Y(T,Ny), Ytilde(T,Ny), Ydata(-(p-1):T,Ny), X(T,Ny * p), XX(Ny * p, Ny * p), XY(Ny * p, Ny)
-    INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
+    ! INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
     TYPE (vsl_stream_state) :: VSLstream
 
     ! STEP 1: construct regressors
@@ -3130,11 +4153,116 @@ CONTAINS
 
   END SUBROUTINE bayesdiffuseVARSV
 
+  ! @\newpage\subsection{bayesVARSVconst}@
+  SUBROUTINE bayesVARSVconst(bdraw, Y, p, Ydata, Ny, T, iSigmaResid, b0, V0i, VSLstream)
+    ! Bayesian VAR with (known) Time-varying Volatility
+    !
+    ! including a constant!
+    !
+    ! note: iSigmaResid is (Ny,Ny,T) and assumed upper triangular
+    ! on exit, Y returns residuals Y - X * reshape(bdraw, Nx, Ny)
+    ! notice: top rows of companion have transpose(reshape(bdraw,Nx,Ny)) 
+
+    INTENT(IN) :: Ydata, Ny, p, T, iSigmaResid, b0, V0i
+    INTENT(OUT) :: Y, bdraw
+    INTENT(INOUT) :: VSLstream
+    INTEGER :: T, Nx, Ny, status, Nb, j, p
+    DOUBLE PRECISION, DIMENSION(Ny * (Ny * p + 1),Ny * (Ny * p + 1)) :: V0i, Vi
+    DOUBLE PRECISION, DIMENSION(Ny * (Ny * p + 1)) ::    b, b0, bdraw
+    DOUBLE PRECISION :: iSigmaResid(Ny,Ny,T), Y(T,Ny), Ytilde(T,Ny), Ydata(-(p-1):T,Ny), X(T,Ny * p + 1), XX(Ny * p + 1, Ny * p + 1), XY(Ny * p + 1, Ny)
+    ! INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
+    TYPE (vsl_stream_state) :: VSLstream
+
+    ! STEP 1: construct regressors
+
+    Y  = Ydata(1:T,:)
+    Nx = Ny * p + 1
+    Nb = Ny * Nx
+    X = 1.0d0
+    FORALL (j = 1:p) X(:, 1 + ((j-1) * Ny + 1) : 1 + ((j-1) * Ny + Ny) ) = Ydata(-(j-1):T-j,:)
+
+
+    ! STEP 2: estimate VAR coefficients: beta = inv(XX) * Xy
+    ! construct Ytilde(t) = iSigmaResid(t) Y(t)
+
+    Ytilde = 0.0d0
+    DO j = 1, T
+       call dsymv('U', Ny, 1.0d0, iSigmaResid(:,:,j), Ny, Y(j,:), 1, 0.0d0, Ytilde(j,:), 1)
+    END DO
+    ! call savemat(Y, 'y.debug')
+    ! call savemat(Ytilde, 'ytilde.debug')
+    ! call savemat(X, 'x.debug')
+
+    ! XY = sum_t {X(t) Ytilde(t)'}
+    call DGEMM('T', 'N', Nx, Ny, T, 1.0d0, X, T, Ytilde, T, 0.0d0, XY, Nx)
+    ! store vec(XY) in b
+    call vec(b,XY)
+
+    ! b = V0i * b0 + b 
+    ! (b is not yet complete, need to multiply by posterior Variance, see below)
+    call DSYMV('U', Nb, 1.0d0, V0i, Nb, b0, 1, 1.0d0, b, 1)
+
+    ! POSTERIOR VARIANCE
+    ! Vi = V0i + sum_t kron(iSigmaResid(t), X(t) X(t)')
+    Vi = V0i
+    DO j = 1, T
+
+       XX = 0.0d0
+       call DSYR('U',Nx,1.0d0,X(j,:),1,XX,Nx)
+       call symmetric(XX) ! important for symkronecker
+       call symkronecker(1.0d0,iSigmaResid(:,:,j),Ny,XX,Nx,1.0d0,Vi)
+    END DO
+
+    ! Solve for posterior mean
+    ! solve: Vi * b = ...
+    ! 1) Choleski factorization
+    call dpotrf('u', Nb, Vi, Nb, status)
+    if (status /= 0) then
+       write(*,*) 'CHOLESKI ERROR:', status, ' [BAYESVAR]'
+
+       call savemat(V0i, 'V0i.dat.debug') ! debug
+       call savemat(Vi, 'Vi.dat.debug') ! debug
+       call savevec(b0, 'b0.dat.debug') ! debug
+       call savevec(b, 'b.dat.debug') ! debug
+       call savemat(X, 'X.dat.debug') ! debug
+       call savemat(Y, 'Y.dat.debug') ! debug
+
+
+       stop 1
+    end if
+
+    ! zero out lower triangular
+    forall (j = 1 : Nb-1) Vi(j+1:Nb,j) = 0.0d0
+
+    ! choleski of Vi
+    call DPOTRS('U', Nb, 1, Vi, Nb, b, Nb, status)
+    if (status /= 0) then
+       write(*,*) 'DPOTRS error: ', status, ' [BAYESVAR]'
+       stop 1
+    end if
+
+    ! DRAW FROM POSTERIOR with mean b and inverse variance Vi 
+    ! notice: I am not scaling the draw)' * chol(Vi), i.e. chol is upper triangular)
+    status  = vdrnggaussian(VSLmethodGaussian, VSLstream, Nb, bdraw, 0.0d0, 1.0d0)
+    call DTRSV('U', 'N', 'N', Nb, Vi, Nb, bdraw, 1)
+
+    ! add posterior mean
+    bdraw = bdraw + b
+
+    ! resid = Y - X * reshape(beta, Nx, Ny)
+    ! note: DGEMM does not care about explicitly reshaping beta
+    call DGEMM('N','N',T,Ny,Nx,-1.0d0,X,T,bdraw,Nx,1.0d0,Y,T)
+
+  END SUBROUTINE bayesVARSVconst
+
+
   ! @\newpage\subsection{bayesVARZSV}@
   SUBROUTINE bayesVARZSV(bdraw, Y, p, Ydata, Ny, T, Z, Nz, iSigmaResid, b0, V0i, VSLstream)
     ! Bayesian VAR with (known) Time-varying Volatility
     ! note: iSigmaResid is (Ny,Ny,T) and assumed upper triangular
-    ! (assuming no constant)
+    !
+    ! including exogenous Z regressors
+    !
     ! on exit, Y returns residuals Y - X * reshape(bdraw, Nx, Ny)
     ! notice: top rows of companion have transpose(reshape(bdraw,Nx,Ny)) 
 
@@ -3149,7 +4277,7 @@ CONTAINS
     DOUBLE PRECISION, DIMENSION(Ny * (Ny * p + Nz)) ::    b, b0, bdraw
     DOUBLE PRECISION :: iSigmaResid(Ny,Ny,T), Y(T,Ny), Ytilde(T,Ny), Ydata(-(p-1):T,Ny), X(T,Ny * p + Nz), XX(Ny * p + Nz, Ny * p + Nz), XY(Ny * p + Nz, Ny)
     DOUBLE PRECISION :: Z(T,Nz) ! note: length T, not Tdata
-    INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
+    ! INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
     TYPE (vsl_stream_state) :: VSLstream
 
     ! STEP 1: construct regressors
@@ -3243,6 +4371,477 @@ CONTAINS
 
   END SUBROUTINE bayesVARZSV
 
+  ! @\newpage\subsection{bayesVARXSV}@
+  SUBROUTINE bayesVARXSV(bdraw, Y, Ny, T, X, Nx, iSigmaResid, b0, V0i, VSLstream)
+    ! Bayesian VAR with (known) Time-varying Volatility
+    !
+    ! with given matrix of regressors
+    !
+    ! note: iSigmaResid is (Ny,Ny,T) and assumed upper triangular
+    ! on exit, Y returns residuals Y - X * reshape(bdraw, Nx, Ny)
+    ! notice: top rows of companion have transpose(reshape(bdraw,Nx,Ny)) 
+
+    INTEGER, INTENT(IN) :: T, Nx, Ny
+    DOUBLE PRECISION, INTENT(INOUT) :: Y(T,Ny)
+    DOUBLE PRECISION, INTENT(IN) :: X(T,Nx)
+    DOUBLE PRECISION, INTENT(IN), DIMENSION(Ny * Nx) :: b0
+    DOUBLE PRECISION, INTENT(OUT), DIMENSION(Ny * Nx) :: bdraw
+    DOUBLE PRECISION, DIMENSION(Ny * Nx) :: b
+    DOUBLE PRECISION, INTENT(IN), DIMENSION(Ny * Nx,Ny * Nx) :: V0i
+    DOUBLE PRECISION, DIMENSION(Ny * Nx,Ny * Nx) :: Vi
+    DOUBLE PRECISION, INTENT(IN), DIMENSION(Ny,Ny,T)  :: iSigmaResid
+
+    INTEGER :: Nb, status, j
+
+    DOUBLE PRECISION :: Ytilde(T,Ny), XX(Nx,Nx), XY(Nx, Ny)
+    ! INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
+    TYPE (vsl_stream_state), INTENT(INOUT) :: VSLstream
+
+    ! STEP 1: construct regressors
+
+    Nb = Ny * Nx
+
+    ! STEP 2: estimate VAR coefficients: beta = inv(XX) * Xy
+    ! construct Ytilde(t) = iSigmaResid(t) Y(t)
+
+    Ytilde = 0.0d0
+    DO j = 1, T
+       call dsymv('U', Ny, 1.0d0, iSigmaResid(:,:,j), Ny, Y(j,:), 1, 0.0d0, Ytilde(j,:), 1)
+    END DO
+
+    ! POSTERIOR VARIANCE
+    ! Vi = V0i + sum_t kron(iSigmaResid(t), X(t) X(t)')
+    Vi = V0i
+    DO j = 1, T
+       XX = 0.0d0
+       call DSYR('U',Nx,1.0d0,X(j,:),1,XX,Nx)
+       call symmetric(XX) ! important for symkronecker
+       call symkronecker(1.0d0,iSigmaResid(:,:,j),Ny,XX,Nx,1.0d0,Vi)
+    END DO
+
+    ! Choleski factorization of posterior variance
+    call savemat(Vi, 'Vipre.debug') ! debug
+    call dpotrf('u', Nb, Vi, Nb, status)
+    if (status /= 0) then
+       write(*,*) 'CHOLESKI ERROR:', status, ' [BAYESVAR-X-SV]'
+       call savemat(V0i, 'V0i.debug') ! debug
+       call savemat(Vi, 'Vi.debug') ! debug
+       call savevec(b0, 'b0.debug') ! debug
+       call savevec(b, 'b.debug') ! debug
+       call savemat(X, 'X.debug') ! debug
+       call savemat(Y, 'Y.debug') ! debug
+       stop 1
+    end if
+    ! zero out lower triangular
+    forall (j = 1 : Nb-1) Vi(j+1:Nb,j) = 0.0d0
+
+
+    ! prepare computation of posterior mean
+    ! 1) XY = sum_t {X(t) Ytilde(t)'}
+    call DGEMM('T', 'N', Nx, Ny, T, 1.0d0, X, T, Ytilde, T, 0.0d0, XY, Nx)
+    ! 2) b = vec(XY) 
+    call vec(b,XY)
+    ! 3) b = V0i * b0 + b 
+    call DSYMV('U', Nb, 1.0d0, V0i, Nb, b0, 1, 1.0d0, b, 1)
+    ! 4) Solve for posterior mean Vi * b = b
+    call DPOTRS('U', Nb, 1, Vi, Nb, b, Nb, status)
+    if (status /= 0) then
+       write(*,*) 'DPOTRS error: ', status, ' [BAYESVAR]'
+       stop 1
+    end if
+
+    ! DRAW FROM POSTERIOR with inverse variance Vi 
+    ! notice: I am not scaling the draw)' * chol(Vi), i.e. chol is upper triangular)
+    status  = vdrnggaussian(VSLmethodGaussian, VSLstream, Nb, bdraw, 0.0d0, 1.0d0)
+    call DTRSV('U', 'N', 'N', Nb, Vi, Nb, bdraw, 1)
+    ! add posterior mean
+    bdraw = bdraw + b
+
+    ! resid = Y - X * reshape(beta, Nx, Ny)
+    ! note: DGEMM does not care about explicitly reshaping beta
+    call DGEMM('N','N',T,Ny,Nx,-1.0d0,X,T,bdraw,Nx,1.0d0,Y,T)
+
+  END SUBROUTINE bayesVARXSV
+
+  ! @\newpage\subsection{bayesVARXSVtriang}@
+  SUBROUTINE bayesVARXSVtriang(bdraw, Y, Ny, T, X, Nx, SVol, Ainv, b0, V0i, VSLstream)
+    ! Bayesian VAR with (known) Time-varying Volatility
+    !
+    ! with given matrix of regressors
+    !
+    ! triangular algorithm of CCM, Ainv in unit lower triangular choleski factor
+    !
+    ! on exit, Y returns residuals Y - X * reshape(bdraw, Nx, Ny)
+    !
+    ! notice: top rows of companion have transpose(reshape(bdraw,Nx,Ny)) 
+    ! Prior V0i is assumed block diagonal (so we can pick marginals by subindexing)
+
+    INTEGER, INTENT(IN) :: T, Nx, Ny
+    DOUBLE PRECISION, INTENT(INOUT) :: Y(T,Ny)
+    DOUBLE PRECISION, INTENT(IN) :: X(T,Nx), Ainv(Ny,Ny)
+    DOUBLE PRECISION, INTENT(IN), DIMENSION(Ny * Nx) :: b0
+    DOUBLE PRECISION, INTENT(OUT), DIMENSION(Ny * Nx) :: bdraw
+    DOUBLE PRECISION, INTENT(IN), DIMENSION(Ny * Nx,Ny * Nx) :: V0i
+    DOUBLE PRECISION, INTENT(IN), DIMENSION(T,Ny)  :: SVol
+
+    DOUBLE PRECISION :: Yresid(T,Ny), lhs(T), rhs(T,Nx) 
+    DOUBLE PRECISION, DIMENSION(Nx) :: thisb
+    INTEGER :: i, jj, kk
+    INTEGER :: ndx(Nx)
+
+    ! INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
+    TYPE (vsl_stream_state), INTENT(INOUT) :: VSLstream
+
+
+    ! Nb = Ny * Nx
+    bdraw  = 0.0d0
+    Yresid = 0.0d0
+
+    ! loop over VAR equations
+    do i=1,Ny
+
+       ! prepare lhs (loop version)
+       ! lhs = Y(:,i)
+       ! do jj=1,i-1
+       !    ! forall(kk=1:T) lhs(kk) = lhs(kk) - Ainv(i,jj) * Yresid(kk,jj)
+       !    lhs = lhs - Ainv(i,jj) * Yresid(:,jj)
+       ! end do
+
+       ! prepare lhs (DGEMV)
+       lhs = Y(:,i)
+       if (i .gt. 1) then
+          ! lhs = y - yresid(:,1:i-1) * Ainv(i,1:i-1)'
+          call DGEMV('n',T,i-1,-1.0d0,Yresid(:,1:i-1),T,Ainv(i,1:i-1),1,1.0d0,lhs,1)
+       end if
+       ! scale lhs
+       forall (kk=1:T)   lhs(kk) = lhs(kk) / SVol(kk,i)
+       ! scale rhs
+       forall (kk=1:T,jj=1:Nx) rhs(kk,jj) = X(kk,jj) / SVol(kk,i)
+
+       ! index into coefficient vector
+       ndx = (/ (i-1) * Nx + 1 : i * Nx /)
+       call bayesRegressionSlope(thisb, lhs, rhs, Nx, T, 1.0d0, b0(ndx), V0i(ndx,ndx), VSLstream)
+
+       ! store results
+       bdraw(ndx) = thisb !  needed to avoid compiler warnings
+       forall (kk=1:T) Yresid(kk,i) = lhs(kk) * SVol(kk,i)
+
+    end do
+
+    ! Yresid = Y - X * reshape(beta, Nx, Ny), and store in Y
+    ! note: DGEMM does not care about explicitly reshaping beta
+    call DGEMM('N','N',T,Ny,Nx,-1.0d0,X,T,bdraw,Nx,1.0d0,Y,T)
+
+
+  END SUBROUTINE bayesVARXSVtriang
+
+  ! @\newpage\subsection{bayesVARXSVcta}@
+  SUBROUTINE bayesVARXSVcta(bdraw, Y, pai, Ny, T, X, Nx, SVol, A, b0, V0i, VSLstream)
+    ! Bayesian VAR with (known) Time-varying Volatility
+    !
+    ! with given matrix of regressors
+    !
+    ! triangular algorithm of CCM, A in unit lower triangular choleski factor
+    !
+    ! on exit, Y returns residuals Y - X * reshape(paidraw, Nx, Ny)
+    !
+    ! notice: top rows of companion have transpose(reshape(paidraw,Nx,Ny)) 
+    ! Prior V0i is assumed block diagonal (so we can pick marginals by subindexing)
+
+    INTEGER, INTENT(IN) :: T, Nx, Ny
+    DOUBLE PRECISION, INTENT(INOUT) :: Y(T,Ny)
+    DOUBLE PRECISION, INTENT(IN) :: X(T,Nx), A(Ny,Ny)
+    DOUBLE PRECISION, INTENT(IN), DIMENSION(Ny * Nx) :: b0
+    DOUBLE PRECISION, INTENT(OUT), DIMENSION(Ny * Nx) :: bdraw
+    DOUBLE PRECISION, INTENT(IN), DIMENSION(Ny * Nx,Ny * Nx) :: V0i
+    DOUBLE PRECISION, INTENT(IN), DIMENSION(T,Ny)  :: SVol
+
+    DOUBLE PRECISION, INTENT(IN), DIMENSION(Nx,Ny) :: pai
+    DOUBLE PRECISION, DIMENSION(Nx,Ny) :: paidraw
+
+    DOUBLE PRECISION, DIMENSION(T,Ny) :: resid, residA
+
+    DOUBLE PRECISION :: lhs(T*Ny), rhs(T*Ny,Nx), lambda(T*Ny)
+    DOUBLE PRECISION, DIMENSION(Nx) :: thisb
+    INTEGER :: Tj, Nj ! number of obs in jth equation
+    INTEGER :: j, jj, kk
+    INTEGER :: ndx(Nx)
+
+    ! INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
+    TYPE (vsl_stream_state), INTENT(INOUT) :: VSLstream
+
+
+    paidraw = pai
+
+    ! call savemat(pai, 'pai0.debug')
+    ! call savemat(V0i, 'V0i.debug')
+    ! call savevec(b0, 'b0.debug')
+
+    ! call savemat(SVol, 'SVol.debug')
+    ! call savemat(Y, 'Y.debug')
+    ! call savemat(X, 'X.debug')
+    ! call savemat(A, 'A.debug')
+
+
+    ! loop over VAR equations
+    do j=1,Ny
+
+       Nj           = (Ny - j) + 1
+       Tj           = Nj * T
+       paidraw(:,j) = 0.0d0
+
+       lhs    = 0.0d0
+       rhs    = 0.0d0
+       lambda = 0.0d0
+       residA = 0.0d0
+       resid  = Y
+
+       ! 1: lhs
+       ! resid = y - x * paidraw
+       call DGEMM('N','N',T,Ny,Nx,-1.0d0,X,T,paidraw,Nx,1.0d0,resid,T)
+
+
+       ! residA(:,1:Ny-j) = resid * A(j:N,:)'
+       call DGEMM('N','T',T,Nj,Ny,1.0d0,resid,T,A(j:Ny,:),Nj,0.0d0,residA(:,1:Nj),T)
+       lhs(1:Tj) = reshape(residA(:,1:Nj), (/ Tj /))
+
+       ! call savemat(resid, 'resid.debug')
+       ! call savemat(residA, 'residA.debug')
+
+       ! 2: rhs
+       ! rhs = kron(A(j:N,j),X) 
+       do jj=0, Nj-1
+          rhs(jj * T + 1 : jj * T + T, :) = A(j + jj,j) * X
+       end do
+
+       ! 3 scale by SV
+       lambda(1:Tj) = reshape(SVol(:,j:Ny), (/ Tj /))
+       forall (kk=1:Tj) lhs(kk) = lhs(kk) / lambda(kk)
+       forall (kk=1:Tj,jj=1:Nx) rhs(kk,jj) = rhs(kk,jj) / lambda(kk)
+
+       ! call savevec(lambda, 'lambda.debug')
+       ! call savevec(lhs, 'lhs.debug')
+       ! call savemat(rhs, 'rhs.debug')
+       ! call savemat(paidraw, 'paidraw.debug')
+
+       ! 4: index into coefficient vector
+       ndx = (/ (j-1) * Nx + 1 : j * Nx /)
+       call bayesRegressionSlope(thisb, lhs(1:Tj), rhs(1:Tj,:), Nx, Tj, 1.0d0, b0(ndx), V0i(ndx,ndx), VSLstream)
+
+       ! store results
+       paidraw(:,j) = thisb
+
+       ! call savevec(thisb, 'thisb.debug')
+       ! if (j == 10) stop 11
+    end do
+
+    ! call savemat(paidraw, 'paidraw.debug')
+    ! stop 11
+
+    ! Yresid = Y - X * paidraw, and store in Y
+    ! note: DGEMM does not care about explicitly reshaping beta
+    call DGEMM('N','N',T,Ny,Nx,-1.0d0,X,T,paidraw,Nx,1.0d0,Y,T)
+
+    bdraw = reshape(paidraw, (/ Ny * Nx /))
+
+  END SUBROUTINE bayesVARXSVcta
+
+  ! @\newpage\subsection{bayesVARXSVeqf}@
+  SUBROUTINE bayesVARXSVeqf(paidraw, Y, N, T, X, K, SVol, A, mu0, invOmega0, VSLstream)
+    ! Bayesian VAR with (known) Time-varying Volatility
+    !
+    ! with given matrix of regressors
+    !
+    ! triangular setup of CCM, Ainv in unit lower triangular choleski factor
+    !
+    ! on exit, Y returns residuals Y - X * reshape(bdraw, Nx, Ny)
+    !
+    ! notice: top rows of companion have transpose(reshape(bdraw,Nx,Ny)) 
+    ! Prior V0i is assumed block diagonal (so we can pick marginals by subindexing)
+
+    ! logical, INTENT(IN) :: doout
+
+    INTEGER, INTENT(IN) :: T, K, N
+    DOUBLE PRECISION, INTENT(INOUT) :: Y(T,N)
+    DOUBLE PRECISION :: Z(T,N)
+    DOUBLE PRECISION, INTENT(IN) :: X(T,K), A(N,N)
+    DOUBLE PRECISION, INTENT(IN), DIMENSION(N * K) :: mu0
+    DOUBLE PRECISION, INTENT(OUT), DIMENSION(N * K) :: paidraw
+    DOUBLE PRECISION, INTENT(IN), DIMENSION(N * K, N * K) :: invOmega0
+    DOUBLE PRECISION, INTENT(IN), DIMENSION(T,N)  :: SVol
+
+    DOUBLE PRECISION :: q(N * K), invOmega(N * K, N * K),  cholinvOmega(N * K, N * K)
+    DOUBLE PRECISION :: zj(T), cj(T,N * K)
+    INTEGER :: NK, jK
+    INTEGER :: j, kk, ii
+    INTEGER :: errcode
+
+    ! INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
+    TYPE (vsl_stream_state), INTENT(INOUT) :: VSLstream
+
+    ! init output
+    paidraw  = 0.0d0
+
+    NK = N * K
+
+    ! if (doout) then
+    !    call savemat(A, 'A.out')
+    !    call savemat(Y, 'Y.out')
+    !    call savemat(SVol, 'SV.out')
+    !    call savemat(X, 'X.out')
+    !    forall (j=1:NK) q(j) = invOmega0(j,j)
+    !    call savevec(q, 'diaginvOmega0.out')
+    !    q = 0
+    !    call savevec(mu0, 'mu0.out')
+    ! end if
+
+    ! init priors
+    invOmega = invOmega0
+    call dsymv('u', NK, 1.0d0, invOmega, NK, mu0, 1, 0.0d0, q, 1)
+
+    ! Z = Y * A'
+    Z = Y ! need to keep Y for computing residuals later
+    call DTRMM('R','L','T','U',T,N,1.0d0,A,N,Z,T)
+
+    do j=1,N
+
+       jK = j * K
+
+       ! zj
+       forall (kk=1:T) zj(kk) = Z(kk,j) / SVol(kk,j)
+
+       ! cj
+       cj = 0.0d0
+       do ii = 1,j-1
+          cj(:, ((ii-1) * K + 1) : ii * K) = A(j,ii) * X
+       end do
+       ii = j
+       cj(:, ((ii-1) * K + 1) : ii * K) = X
+       forall (kk=1:T,ii=1:jK) cj(kk,ii) = cj(kk,ii) / SVol(kk,j)
+
+       ! update q
+       call dgemv('t', T, jK, 1.0d0, cj, T, zj, 1, 1.0d0, q, 1)
+
+       ! update invOmega
+       ! note: not exploiting any zeros in cj; doing so messes up contiguous memory ...
+       ! ... main performance improvement comes from exploting cj-zeros in q update anyway
+       call dsyrk('u', 't', NK, T, 1.0d0, cj, T, 1.0d0, invOmega, NK)
+
+
+    end do
+
+    ! choleski of invOmega
+    ! cholinvOmega    = chol(invOmega);
+    cholinvOmega = invOmega 
+    call DPOTRF('u', NK, cholinvOmega, NK, errcode)
+    if (errcode .ne. 0) then
+       print *, 'DPOTRF error [eqf]', errcode
+    end if
+
+    ! call savemat(invOmega, 'cholinvOmega.debug')
+
+    ! draw standard normals
+    errcode = vdrnggaussian(VSLmethodGaussian, VSLstream, NK, paidraw, 0.0d0, 1.0d0)
+    ! call savevec(paidraw, 'zdraws.debug')
+
+    ! paidraw = cholinvOmega \ (cholinvOmega' \ q + zdraws);
+    call dtrsv('u', 't', 'n', NK, cholinvOmega, NK, q, 1)
+    paidraw = q + paidraw
+    call dtrsv('u', 'n', 'n', NK, cholinvOmega, NK, paidraw, 1)
+
+    ! call savevec(paidraw, 'paidraw.debug')
+
+    call DGEMM('N','N',T,N,K,-1.0d0,X,T,paidraw,K,1.0d0,Y,T)
+
+
+  END SUBROUTINE bayesVARXSVeqf
+
+  ! @\newpage\subsection{bayesVARXSVeqf}@
+  SUBROUTINE bayesVARXSVeqf0(paidraw, q, invOmega, Y, N, T, X, K, SVol, A, mu0, invOmega0, VSLstream)
+    ! Bayesian VAR with (known) Time-varying Volatility
+    !
+    ! with given matrix of regressors
+    !
+    ! triangular setup of CCM, Ainv in unit lower triangular choleski factor
+    !
+    ! on exit, Y returns residuals Y - X * reshape(bdraw, Nx, Ny)
+    !
+    ! notice: top rows of companion have transpose(reshape(bdraw,Nx,Ny)) 
+    ! Prior V0i is assumed block diagonal (so we can pick marginals by subindexing)
+
+    INTEGER, INTENT(IN) :: T, K, N
+    DOUBLE PRECISION, INTENT(INOUT) :: Y(T,N)
+    DOUBLE PRECISION, INTENT(IN) :: X(T,K), A(N,N)
+    DOUBLE PRECISION, INTENT(IN), DIMENSION(N * K) :: mu0
+    DOUBLE PRECISION, INTENT(OUT), DIMENSION(N * K) :: paidraw
+    DOUBLE PRECISION, INTENT(IN), DIMENSION(N * K, N * K) :: invOmega0
+    DOUBLE PRECISION, INTENT(IN), DIMENSION(T,N)  :: SVol
+
+    DOUBLE PRECISION, INTENT(OUT) :: q(N * K), invOmega(N * K, N * K) 
+    DOUBLE PRECISION :: zj(T), cj(T,N * K)
+    ! DOUBLE PRECISION, ALLOCATABLE, DIMENSION(:,:) :: QQ
+    INTEGER :: NK
+    INTEGER :: j, kk, ii
+    INTEGER :: errcode
+
+    ! INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
+    TYPE (vsl_stream_state), INTENT(INOUT) :: VSLstream
+
+    ! init output
+    paidraw  = 0.0d0
+
+    NK = N * K
+
+    invOmega = 0.0d0
+    q        = 0.0d0
+    ! init priors
+    invOmega = invOmega0
+    call dsymv('u', NK, 1.0d0, invOmega, NK, mu0, 1, 0.0d0, q, 1)
+    ! call savevec(q, 'q00.debug')
+
+    ! Z = Y * A'
+    call DTRMM('R','L','T','U',T,N,1.0d0,A,N,Y,T)
+
+    ! call savemat(Y, 'Z.debug')
+
+    do j=1, N
+
+       ! cj
+       cj = 0.0d0
+       do ii = 1,N
+          cj(:, ((ii-1) * K + 1) : ii * K) = A(j,ii) * X
+       end do
+       forall (kk=1:T,ii=1:NK) cj(kk,ii) = cj(kk,ii) / SVol(kk,j)
+
+       ! zj
+       forall (kk=1:T) zj(kk) = Y(kk,j) / SVol(kk,j)
+
+       ! update q
+       call dgemv('t', T, NK, 1.0d0, cj, T, zj, 1, 1.0d0, q, 1)
+
+       ! update invOmega
+       call dsyrk('u', 't', NK, T, 1.0d0, cj, T, 1.0d0, invOmega, NK)
+
+    end do
+
+
+    ! choleski of invOmega
+    ! cholinvOmega    = chol(invOmega);
+    call DPOTRF('u', NK, invOmega, NK, errcode)
+    if (errcode .ne. 0) then
+       print *, 'DPOTRF error [eqf0]', errcode
+    end if
+
+    ! paidraw = cholinvOmega \ (cholinvOmega' \ q + zdraws);
+    call dtrsv('u', 't', 'n', NK, invOmega, NK, q, 1)
+
+    ! draw standard normals
+    errcode = vdrnggaussian(VSLmethodGaussian, VSLstream, NK, paidraw, 0.0d0, 1.0d0)
+    ! call savevec(paidraw, 'zdraws.debug')
+    paidraw = q + paidraw
+    call dtrsv('u', 'n', 'n', NK, invOmega, NK, paidraw, 1)
+
+  END SUBROUTINE bayesVARXSVeqf0
 
   ! @\newpage\subsection{VARmaxroot}@
   SUBROUTINE VARmaxroot(maxlambda, beta, Ny, p)
@@ -3336,7 +4935,7 @@ CONTAINS
 
     INTEGER :: Ny, p, Ndraws, Nx, errcode, j, Nf
     DOUBLE PRECISION  :: maxlambdas(Ndraws), kompanion(Ny * p, Ny * p), f(Ny * Ny * p,Ndraws), f0(Ny * Ny * p), sqrtVf0(Ny * Ny * p, Ny * Ny * p)
-    INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
+    ! INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
     type (vsl_stream_state) :: VSLstream
 
 
@@ -3390,7 +4989,7 @@ CONTAINS
 
     INTEGER :: errcode
 
-    INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
+    ! INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
     type (vsl_stream_state) :: VSLstream
 
     IF (PRESENT(ischol)) THEN
@@ -3461,7 +5060,7 @@ CONTAINS
 
     INTEGER :: n, errcode
 
-    INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
+    ! INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
     type (vsl_stream_state) :: VSLstream
 
     IF (PRESENT(ischol)) THEN
@@ -3538,7 +5137,7 @@ CONTAINS
 
     INTEGER :: n, errcode
 
-    INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
+    ! INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
     type (vsl_stream_state) :: VSLstream
 
     IF (PRESENT(ischol)) THEN
@@ -3671,6 +5270,8 @@ CONTAINS
     ! call savevec((/ ssr /), 'gibbsssr.debug')
 
   END SUBROUTINE normalgammaupdate
+
+
 
 END MODULE gibbsbox
 

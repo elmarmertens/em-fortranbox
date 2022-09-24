@@ -105,13 +105,13 @@ CONTAINS
           END IF
        ELSE
           IF (daysleft > 0) THEN 
-             WRITE(*,'(" Stream ", i2, ": ", f6.2, " % -- ", i3, " days ", i3, " hours and ", i3, " minutes remaining")')  timer%rank, fractiondone * 100.0, daysleft, hoursleft, minutesleft
+             WRITE(*,'(" Stream ", i4, ": ", f6.2, " % -- ", i3, " days ", i3, " hours and ", i3, " minutes remaining")')  timer%rank, fractiondone * 100.0, daysleft, hoursleft, minutesleft
           ELSEIF (hoursleft > 0) THEN 
-             WRITE(*,'(" Stream ", i2, ": ", f6.2, " % -- ", i3, " hours and ", i3, " minutes remaining")')  timer%rank, fractiondone * 100.0, hoursleft, minutesleft
+             WRITE(*,'(" Stream ", i4, ": ", f6.2, " % -- ", i3, " hours and ", i3, " minutes remaining")')  timer%rank, fractiondone * 100.0, hoursleft, minutesleft
           ELSEIF (minutesleft > 0) THEN 
-             WRITE(*,'(" Stream ", i2, ": ", f6.2, " % -- ", i3, " minutes and ", i2, " sec. remaining")')  timer%rank, fractiondone * 100.0, minutesleft, secondsleft
+             WRITE(*,'(" Stream ", i4, ": ", f6.2, " % -- ", i3, " minutes and ", i2, " sec. remaining")')  timer%rank, fractiondone * 100.0, minutesleft, secondsleft
           ELSE 
-             WRITE(*,'(" Stream ", i2, ": ", f6.2, " % -- ", i3, " sec. remaining")')  timer%rank, fractiondone * 100.0, secondsleft
+             WRITE(*,'(" Stream ", i4, ": ", f6.2, " % -- ", i3, " sec. remaining")')  timer%rank, fractiondone * 100.0, secondsleft
           END IF
        END IF
        timer%last = now
@@ -159,13 +159,13 @@ CONTAINS
           END IF
        ELSE
           IF (daysleft > 0) THEN 
-             WRITE(*,'(" Stream ", i2, ": ", f6.2, " % -- ", i3, " days ", i3, " hours and ", i3, " minutes remaining -- ", a)')  timer%rank, fractiondone * 100.0, daysleft, hoursleft, minutesleft, comment
+             WRITE(*,'(" Stream ", i4, ": ", f6.2, " % -- ", i3, " days ", i3, " hours and ", i3, " minutes remaining -- ", a)')  timer%rank, fractiondone * 100.0, daysleft, hoursleft, minutesleft, comment
           ELSEIF (hoursleft > 0) THEN 
-             WRITE(*,'(" Stream ", i2, ": ", f6.2, " % -- ", i3, " hours and ", i3, " minutes remaining -- ", a)')  timer%rank, fractiondone * 100.0, hoursleft, minutesleft, comment
+             WRITE(*,'(" Stream ", i4, ": ", f6.2, " % -- ", i3, " hours and ", i3, " minutes remaining -- ", a)')  timer%rank, fractiondone * 100.0, hoursleft, minutesleft, comment
           ELSEIF (minutesleft > 0) THEN 
-             WRITE(*,'(" Stream ", i2, ": ", f6.2, " % -- ", i3, " minutes and ", i2, " sec. remaining -- ", a)')  timer%rank, fractiondone * 100.0, minutesleft, secondsleft, comment
+             WRITE(*,'(" Stream ", i4, ": ", f6.2, " % -- ", i3, " minutes and ", i2, " sec. remaining -- ", a)')  timer%rank, fractiondone * 100.0, minutesleft, secondsleft, comment
           ELSE 
-             WRITE(*,'(" Stream ", i2, ": ", f6.2, " % -- ", i3, " sec. remaining -- ", a)')  timer%rank, fractiondone * 100.0, secondsleft, comment
+             WRITE(*,'(" Stream ", i4, ": ", f6.2, " % -- ", i3, " sec. remaining -- ", a)')  timer%rank, fractiondone * 100.0, secondsleft, comment
           END IF
        END IF
        timer%last = now

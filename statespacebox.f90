@@ -170,7 +170,7 @@ CONTAINS
 
     TYPE (vsl_stream_state) :: VSLstream
     INTEGER :: j,errcode,T,Ny,Nx,Nw
-    INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
+    ! INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
 
     DOUBLE PRECISION, DIMENSION(Nx,Nx) :: A
     DOUBLE PRECISION, DIMENSION(Nx,Nw) :: B
@@ -218,7 +218,7 @@ CONTAINS
 
     TYPE (vsl_stream_state) :: VSLstream
     INTEGER :: j,i, errcode,T,Ny,Nx,Nw
-    INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
+    ! INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
 
     DOUBLE PRECISION, DIMENSION(Nx,Nx) :: A
     DOUBLE PRECISION, DIMENSION(Nx,Nw) :: B
@@ -260,6 +260,68 @@ CONTAINS
 
   END FUNCTION simyABCsvol0
 
+  ! @\newpage\subsection{simyABCsv}@
+  FUNCTION simyABCsvt(T,Ny,Nx,Nw,A,B,C,SVol,tdof,x0,VSLstream) result(y) 
+
+    ! INTENT(OUT) :: y
+    INTENT(IN) :: Ny,Nx,Nw,T,A,B,C,SVol,tdof,x0
+    INTENT(INOUT) :: VSLstream
+
+    TYPE (vsl_stream_state) :: VSLstream
+    INTEGER :: j,i, errcode,T,Ny,Nx,Nw
+
+    DOUBLE PRECISION, DIMENSION(Nx,Nx) :: A
+    DOUBLE PRECISION, DIMENSION(Nx,Nw) :: B
+    DOUBLE PRECISION, DIMENSION(Ny,Nx) :: C
+
+    DOUBLE PRECISION, DIMENSION(Nx)     :: x0
+
+    DOUBLE PRECISION, DIMENSION(Nx,1:T) :: x
+    DOUBLE PRECISION, DIMENSION(Ny,1:T) :: y
+    DOUBLE PRECISION, DIMENSION(Nw,1:T) :: w, SVol
+    DOUBLE PRECISION, DIMENSION(1:T,Nw) :: tscale ! note transposed format, for better call to vdrngchisquare (alas less efficient to scale SVol ...)
+    DOUBLE PRECISION, DIMENSION(Nw)     :: tdof
+
+    ! draw normal random numbers
+    errcode    = vdrnggaussian(VSLmethodGaussian, VSLstream, T * Nw, w, 0.0d0, 1.0d0)
+
+
+    ! todo: use IG draws to allow for non-integer dof!
+
+    ! draw gamma scale factors
+    do i = 1, Nw
+        errcode    = vdrnggamma(VSL_RNG_METHOD_GAMMA_GNORM, VSLstream, T, tscale(:,i), tdof(i) * .5d0, 0.0d0,  2.0d0 /  tdof(i)) 
+        ! 1 / tscale has IG(tdof/2, tdof/2)
+    end do
+    
+
+    x = 0.0d0
+    y = 0.0d0
+
+    ! apply SVol to shocks
+    FORALL (j=1:T,i=1:Nw) w(i,j) = SVol(i,j) * w(i,j) / sqrt(tscale(j,i))
+
+    ! scale shocks
+    DO j=1,T
+       call DGEMV('N',Nx,Nw,1.0d0,B,Nx,w(:,j),1,0.0d0,x(:,j),1)
+    END DO
+
+    ! simulate state
+    j = 1
+    call DGEMV('N',Nx,Nx,1.0d0,A,Nx,x0,1,1.0d0,x(:,j),1)
+    DO j=2,T
+       call DGEMV('N',Nx,Nx,1.0d0,A,Nx,x(:,j-1),1,1.0d0,x(:,j),1)
+    END DO
+
+
+    ! simulate observer
+    ! TODO: replace with a single DGEMM?
+    DO j=1,T
+       call DGEMV('N',Ny,Nx,1.0d0,C,Ny,x(:,j),1,0.0d0,y(:,j),1)
+    END DO
+
+  END FUNCTION simyABCsvt
+
   ! @\newpage\subsection{simA3B3C3noise}@
   SUBROUTINE simA3B3C3noise(y,x,ynoise,xshock,T,Ny,Nx,Nw,A,B,C,noiseVol,Ex0,sqrtVx0,VSLstream)
 
@@ -272,7 +334,7 @@ CONTAINS
 
     TYPE (vsl_stream_state) :: VSLstream
     INTEGER :: j,k,errcode,T,Ny,Nx,Nw
-    INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
+    ! INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
 
     DOUBLE PRECISION, DIMENSION(Nx,Nx,T) :: A
     DOUBLE PRECISION, DIMENSION(Nx,Nw,T) :: B
@@ -326,7 +388,7 @@ CONTAINS
 
     TYPE (vsl_stream_state) :: VSLstream
     INTEGER :: j, errcode,T,Ny,Nx,Nw
-    INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
+    ! INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
 
     DOUBLE PRECISION, DIMENSION(Nx,Nx,T) :: A
     DOUBLE PRECISION, DIMENSION(Nx,Nw,T) :: B
@@ -376,7 +438,7 @@ CONTAINS
     TYPE (vsl_stream_state) :: VSLstream
     INTEGER :: j, errcode,T,Ny,Nx,Nw
     INTEGER :: Nz
-    INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
+    ! INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
 
     DOUBLE PRECISION, DIMENSION(Nx,Nx,T) :: A
     DOUBLE PRECISION, DIMENSION(Nx,Nz,T) :: F
