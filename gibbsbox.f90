@@ -1229,44 +1229,23 @@ CONTAINS
     type (vsl_stream_state) :: VSLstream
 
     ! DOUBLE PRECISION, DIMENSION(dof0) :: z
-    DOUBLE PRECISION :: sigma0T, draw, thisdraw(1)
+    DOUBLE PRECISION :: sigma0T, draw 
+    double precision :: thisdraw(1)
 
 
     ! draw
     ! errcode    = vdrnggaussian(VSLmethodGaussian, VSLstream, dof0, z, 0.0d0, 1.0d0)
     ! draw = sigma0T / sum(z ** 2)
 
-    errcode    = vdrnggamma(VSL_RNG_METHOD_GAMMA_GNORM, VSLstream, 1, thisdraw, sigma0T * .5d0, 0.0d0,  2.0d0 /  dble(dof0))
-
-    draw = thisdraw(1) ! work around to avoid scalar-vs-array compile errors
+    ! faster: 
+    errcode    = vdrngchisquare(VSLmethodChisquare, VSLstream, 1, thisdraw, dof0)
+    draw       = sigma0T / thisdraw(1)
 
   END SUBROUTINE igammaDraw
 
-  ! ! @\newpage\subsection{igammaDraws}@
-  ! SUBROUTINE igammaDraws(draw, N, sigma0T, dof0, VSLstream)
-
-  !   ! multiple draws with *different* parameter values sigma0T, quicker via homemade chi2 computation
-
-  !   INTENT(INOUT) :: draw, VSLstream
-  !   INTENT(IN)    :: N, sigma0T, dof0
-
-  !   INTEGER :: dof0, errcode
-  !   type (vsl_stream_state) :: VSLstream
-
-  !   INTEGER :: N
-  !   DOUBLE PRECISION, DIMENSION(dof0,N) :: z
-  !   DOUBLE PRECISION, DIMENSION(N) :: sigma0T, draw
-
-  !   INTEGER, PARAMETER :: VSLmethodGaussian = 0
-
-  !   errcode    = vdrnggaussian(VSLmethodGaussian, VSLstream, dof0 * N, z, 0.0d0, 1.0d0)
-  !   draw       = sigma0T / sum(z ** 2,1)
-
-  ! END SUBROUTINE igammaDraws
-
   ! @\newpage\subsection{igammaDraws}@ 
-  SUBROUTINE igammaDraws(draw, N, sigma0T, dof0, VSLstream)
-
+  SUBROUTINE igammaDrawN(draw, N, sigma0T, dof0, VSLstream)
+    ! assumes sigma0T is 1-dimensional
     ! new implementation by calling VSL-chisquare RNG (instead of homemade sim)
 
     INTENT(INOUT) :: draw, VSLstream
@@ -1278,8 +1257,34 @@ CONTAINS
     INTEGER :: N
 
     DOUBLE PRECISION, DIMENSION(N) :: chisquares
-    DOUBLE PRECISION, DIMENSION(N) :: sigma0T, draw
+    DOUBLE PRECISION :: sigma0T
+    DOUBLE PRECISION, DIMENSION(N) :: draw
 
+    ! errcode    = vdrnggaussian(VSLmethodGaussian, VSLstream, dof0 * N, z, 0.0d0, 1.0d0)
+    ! draw       = sigma0T / sum(z ** 2,1)
+
+    errcode    = vdrngchisquare(VSLmethodChisquare, VSLstream, N, chisquares, dof0)
+    draw       = sigma0T / chisquares
+
+
+  END SUBROUTINE igammaDrawN
+
+  ! @\newpage\subsection{igammaDraws}@ 
+  SUBROUTINE igammaDraws(draw, N, sigma0T, dof0, VSLstream)
+    ! assumes sigma0T is N-dimensional
+    ! new implementation by calling VSL-chisquare RNG (instead of homemade sim)
+
+    INTENT(INOUT) :: draw, VSLstream
+    INTENT(IN)    :: N, sigma0T, dof0
+
+    INTEGER :: dof0, errcode
+    type (vsl_stream_state) :: VSLstream
+
+    INTEGER :: N
+
+    DOUBLE PRECISION, DIMENSION(N) :: chisquares
+    DOUBLE PRECISION, DIMENSION(N) :: sigma0T
+    DOUBLE PRECISION, DIMENSION(N) :: draw
 
     ! errcode    = vdrnggaussian(VSLmethodGaussian, VSLstream, dof0 * N, z, 0.0d0, 1.0d0)
     ! draw       = sigma0T / sum(z ** 2,1)
