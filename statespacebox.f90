@@ -170,7 +170,6 @@ CONTAINS
 
     TYPE (vsl_stream_state) :: VSLstream
     INTEGER :: j,errcode,T,Ny,Nx,Nw
-    ! INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
 
     DOUBLE PRECISION, DIMENSION(Nx,Nx) :: A
     DOUBLE PRECISION, DIMENSION(Nx,Nw) :: B
@@ -218,7 +217,6 @@ CONTAINS
 
     TYPE (vsl_stream_state) :: VSLstream
     INTEGER :: j,i, errcode,T,Ny,Nx,Nw
-    ! INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
 
     DOUBLE PRECISION, DIMENSION(Nx,Nx) :: A
     DOUBLE PRECISION, DIMENSION(Nx,Nw) :: B
@@ -334,7 +332,6 @@ CONTAINS
 
     TYPE (vsl_stream_state) :: VSLstream
     INTEGER :: j,k,errcode,T,Ny,Nx,Nw
-    ! INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
 
     DOUBLE PRECISION, DIMENSION(Nx,Nx,T) :: A
     DOUBLE PRECISION, DIMENSION(Nx,Nw,T) :: B
@@ -388,7 +385,6 @@ CONTAINS
 
     TYPE (vsl_stream_state) :: VSLstream
     INTEGER :: j, errcode,T,Ny,Nx,Nw
-    ! INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
 
     DOUBLE PRECISION, DIMENSION(Nx,Nx,T) :: A
     DOUBLE PRECISION, DIMENSION(Nx,Nw,T) :: B
@@ -438,7 +434,6 @@ CONTAINS
     TYPE (vsl_stream_state) :: VSLstream
     INTEGER :: j, errcode,T,Ny,Nx,Nw
     INTEGER :: Nz
-    ! INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
 
     DOUBLE PRECISION, DIMENSION(Nx,Nx,T) :: A
     DOUBLE PRECISION, DIMENSION(Nx,Nz,T) :: F

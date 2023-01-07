@@ -184,7 +184,6 @@ CONTAINS
     double precision :: xx(Nx, Nx), xy(Nx,Ny), yresid(Nobs,Ny), ssr(ny,ny), sqrtSSRdraw(ny,ny), bhat(Nx,Ny)
     integer :: errcode
 
-    ! INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
     TYPE (vsl_stream_state) :: VSLstream
 
     ! X'X
@@ -238,7 +237,6 @@ CONTAINS
     DOUBLE PRECISION, DIMENSION(k, k) :: Vi, V0i
     DOUBLE PRECISION, DIMENSION(k) ::    b, bdraw, b0
     DOUBLE PRECISION :: iSigmaResid(Ny,Ny,T), residuals(T,Ny), Ytilde(Ny), Ydata(T,Ny), Xdata(T,MaxNx,Ny), X(Ny,k), work(Ny, k), Y(Ny) !  XY(k),
-    ! INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
     TYPE (vsl_stream_state) :: VSLstream
     Ytilde = 0.0d0
     ! set up the priors
@@ -317,7 +315,6 @@ CONTAINS
     DOUBLE PRECISION, DIMENSION(0:T) :: z
     TYPE (vsl_stream_state), INTENT(INOUT) :: VSLstream
     INTEGER :: j, errcode
-    ! INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
 
 
     errcode = vdrnggaussian(VSLmethodGaussian, VSLstream, T + 1, z, 0.0d0, sigma)
@@ -340,7 +337,6 @@ CONTAINS
     DOUBLE PRECISION, DIMENSION(N,0:T) :: h, z
     DOUBLE PRECISION :: sqrtVh(N,N), Eh0(N), sqrtVh0(N,N)
     TYPE (vsl_stream_state) :: VSLstream
-    ! INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
 
     ! draw random numbers
     errcode    = vdrnggaussian(VSLmethodGaussian, VSLstream, (T + 1) * N, z, 0.0d0, 1.0d0)
@@ -367,7 +363,6 @@ CONTAINS
     DOUBLE PRECISION, DIMENSION(0:T) :: z
     DOUBLE PRECISION :: rho, sigma, vary
     TYPE (vsl_stream_state) :: VSLstream
-    ! INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0, E0 = 0
 
     errcode = vdrnggaussian(VSLmethodGaussian, VSLstream, T + 1, z, 0.0d0, 1.0d0)
 
@@ -394,7 +389,6 @@ CONTAINS
     DOUBLE PRECISION, DIMENSION(N)   :: rho
     DOUBLE PRECISION, DIMENSION(N,N) :: sqrtSigma, sqrtSigma0, A
     TYPE (vsl_stream_state) :: VSLstream
-    ! INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0, E0 = 0
 
     errcode = vdrnggaussian(VSLmethodGaussian, VSLstream, N * (T + 1), z, 0.0d0, 1.0d0)
 
@@ -434,7 +428,6 @@ CONTAINS
     INTENT (OUT) :: tau
     INTENT(INOUT) :: VSLstream
     INTEGER j, errcode, T
-    ! INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
     DOUBLE PRECISION, DIMENSION(0:T) :: tautT, tau, tauplus, SigmaStar, z
     DOUBLE PRECISION, DIMENSION(T) :: y, yplus, vartrend, varnoise, Sigma, e
     DOUBLE PRECISION :: X0, V0, gain
@@ -501,7 +494,6 @@ CONTAINS
     INTENT (OUT) :: beta
     INTENT(INOUT) :: VSLstream
     INTEGER j, errcode, T
-    ! INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
     DOUBLE PRECISION, DIMENSION(0:T) :: betatT, beta, betaplus, SigmaStar, z
     DOUBLE PRECISION, DIMENSION(T) :: y, yplus, x, Sigma, e
     DOUBLE PRECISION :: beta0, beta0V, gain, omxgain, varbeta, varnoise
@@ -731,7 +723,6 @@ CONTAINS
     INTENT(INOUT) :: VSLstream
 
     INTEGER :: Ndraws, N, errcode, j
-    ! INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
     DOUBLE PRECISION, DIMENSION(Ndraws) :: u
     DOUBLE PRECISION, DIMENSION(N) :: cdf
     INTEGER, DIMENSION(Ndraws) :: ndx
@@ -762,7 +753,6 @@ CONTAINS
     INTENT(INOUT) :: VSLstream
 
     INTEGER :: Ndraws, N, errcode, j
-    ! INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
     DOUBLE PRECISION, DIMENSION(Ndraws) :: u
     INTEGER, DIMENSION(Ndraws) :: ndx
     DOUBLE PRECISION, DIMENSION(N) :: pdf, cdf
@@ -890,7 +880,6 @@ CONTAINS
     DOUBLE PRECISION, DIMENSION(0:T) :: h
     DOUBLE PRECISION  :: hInno, Eh0, Vh0
 
-    ! INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
     TYPE (vsl_stream_state) :: VSLstream
 
     ! log-linear observer
@@ -959,7 +948,6 @@ CONTAINS
     DOUBLE PRECISION, DIMENSION(0:T) :: h, SVol
     DOUBLE PRECISION  :: hInno, Eh0, Vh0
 
-    ! INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
     TYPE (vsl_stream_state) :: VSLstream
 
     ! log-linear observer
@@ -1036,7 +1024,6 @@ CONTAINS
     DOUBLE PRECISION :: A(2,2,T), B(2,1,T), C(1,2,T), y2noise(T), hshock(T)
 
 
-    ! INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
     TYPE (vsl_stream_state) :: VSLstream
 
     ! log-linear observer
@@ -1148,7 +1135,6 @@ CONTAINS
     DOUBLE PRECISION :: A(2,2,T), B(2,1,T), C(1,2,T), y2noise(T), hshock(T)
 
 
-    ! INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
     TYPE (vsl_stream_state) :: VSLstream
 
     ! log-linear observer
@@ -1245,7 +1231,6 @@ CONTAINS
     ! DOUBLE PRECISION, DIMENSION(dof0) :: z
     DOUBLE PRECISION :: sigma0T, draw, thisdraw(1)
 
-    INTEGER, PARAMETER :: VSLmethodGaussian = 0
 
     ! draw
     ! errcode    = vdrnggaussian(VSLmethodGaussian, VSLstream, dof0, z, 0.0d0, 1.0d0)
@@ -1295,7 +1280,6 @@ CONTAINS
     DOUBLE PRECISION, DIMENSION(N) :: chisquares
     DOUBLE PRECISION, DIMENSION(N) :: sigma0T, draw
 
-    INTEGER, PARAMETER :: VSLmethodGaussian = 0
 
     ! errcode    = vdrnggaussian(VSLmethodGaussian, VSLstream, dof0 * N, z, 0.0d0, 1.0d0)
     ! draw       = sigma0T / sum(z ** 2,1)
@@ -1319,7 +1303,6 @@ CONTAINS
     DOUBLE PRECISION, DIMENSION(dof0 + Nobs) :: z
     DOUBLE PRECISION :: sigmaT, sigma0T, igammadraw
 
-    INTEGER, PARAMETER :: VSLmethodGaussian = 0
 
     ! compute posterior
     dof     = dof0 + Nobs
@@ -1355,7 +1338,6 @@ CONTAINS
     DOUBLE PRECISION, DIMENSION(Ny,Ny) :: SigmaT, work, iwdraw
     ! INTEGER, DIMENSION(Ny) :: ipiv ! helper variable for dgetrs 
 
-    INTEGER, PARAMETER :: VSLmethodGaussian = 0
 
     ! ztilde = SigmaT^{-.5}' z
     work = SigmaT
@@ -1401,7 +1383,6 @@ CONTAINS
     DOUBLE PRECISION, DIMENSION(Ny,Ny) :: SigmaT, iwcdraw
     ! INTEGER, DIMENSION(Ny) :: ipiv ! helper variable for dgetrs 
 
-    INTEGER, PARAMETER :: VSLmethodGaussian = 0
 
     IF (dof < Ny) THEN
        WRITE(*,*) "IWISHCHOLDRAW: need dof at least as large as Ny"
@@ -1475,7 +1456,6 @@ CONTAINS
     DOUBLE PRECISION, DIMENSION(Ny,Ny) :: Sigma0T, SigmaT, iwishcholdraw
     ! INTEGER, DIMENSION(Ny) :: ipiv
 
-    INTEGER, PARAMETER :: VSLmethodGaussian = 0
 
     ! compute posterior
     dof     = dof0 + T
@@ -1534,7 +1514,6 @@ CONTAINS
 
     INTEGER :: i, k, T, Ny, Nslopes, offset, these
     DOUBLE PRECISION :: SVol(Ny,0:T), y(Ny,T), E0slopes(Nslopes), iV0slopes(Nslopes, Nslopes), shockslopes(Nslopes)
-    ! INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
     TYPE (vsl_stream_state) :: VSLstream
 
 
@@ -1572,7 +1551,6 @@ CONTAINS
 
     INTEGER :: i, k, T, Ny, North, Nslopes, offset, these
     DOUBLE PRECISION :: SVol(Ny,0:T), y(Ny,T), shockslopes(Nslopes)
-    ! INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
     TYPE (vsl_stream_state) :: VSLstream
 
 
@@ -1610,7 +1588,6 @@ CONTAINS
 
     INTEGER :: i, k, T, Ny, Nslopes, offset, these
     DOUBLE PRECISION :: SVol(Ny,0:T), y(Ny,T), shockslopes(Nslopes)
-    ! INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
     TYPE (vsl_stream_state) :: VSLstream
 
 
@@ -1667,7 +1644,6 @@ CONTAINS
     ! KSC state space
     DOUBLE PRECISION :: a(T), b(T), c(Ny,1,T)
 
-    ! INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
     TYPE (vsl_stream_state) :: VSLstream
 
     ! log-linear observer
@@ -1731,7 +1707,6 @@ CONTAINS
 
     INTEGER :: s, j, k, T, Nsv,  errcode
     DOUBLE PRECISION :: sqrtVhshock(Nsv,Nsv), Eh0(Nsv), sqrtVh0(Nsv,Nsv)
-    ! INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
     TYPE (vsl_stream_state) :: VSLstream
 
     ! KSC mixture
@@ -1827,7 +1802,6 @@ CONTAINS
 
     INTEGER :: i, k, T, Ny, Nslopes, offset, these
     DOUBLE PRECISION :: h(Ny,0:T), SVol(Ny,0:T), y(Ny,T), hInno(Ny), E0h(Ny), V0h(Ny), shockslopes(Nslopes)
-    ! INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
     TYPE (vsl_stream_state) :: VSLstream
 
 
@@ -1872,7 +1846,6 @@ CONTAINS
 
     INTEGER :: i, k, T, Ny, Nslopes, offset, these
     DOUBLE PRECISION :: h(Ny,0:T), SVol(Ny,0:T), resid(Ny,T), y(Ny,T), E0slopes(Nslopes), iV0slopes(Nslopes, Nslopes), hInno(Ny), E0h(Ny), V0h(Ny), shockslopes(Nslopes)
-    ! INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
     TYPE (vsl_stream_state) :: VSLstream
 
 
@@ -1920,7 +1893,6 @@ CONTAINS
 
     INTEGER :: i, k, T, Ny, Nslopes, offset, these
     DOUBLE PRECISION :: h(Ny,0:T), hshock(Ny,T), SVol(Ny,0:T), y(Ny,T), resid(Ny,T), E0slopes(Nslopes), iV0slopes(Nslopes, Nslopes), hrho(Ny), hInno(Ny), E0h(Ny), V0h(Ny), shockslopes(Nslopes)
-    ! INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
     TYPE (vsl_stream_state) :: VSLstream
 
 
@@ -1967,7 +1939,6 @@ CONTAINS
 
     INTEGER :: i, k, T, Ny, Nslopes, offset, these
     DOUBLE PRECISION :: h(Ny,0:T), hshock(Ny,T), SVol(Ny,0:T), y(Ny,T), resid(Ny,T), hrho(Ny), hInno(Ny), E0h(Ny), V0h(Ny), shockslopes(Nslopes)
-    ! INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
     TYPE (vsl_stream_state) :: VSLstream
 
 
@@ -2014,7 +1985,6 @@ CONTAINS
 
     INTEGER :: i, k, T, Ny, Nslopes, offset, these
     DOUBLE PRECISION :: h(Ny,0:T), hbar(Ny), hshock(Ny,T), SVol(Ny,0:T), y(Ny,T), resid(Ny,T), E0slopes(Nslopes), iV0slopes(Nslopes, Nslopes), hrho(Ny), hInno(Ny), E0h(Ny), V0h(Ny), shockslopes(Nslopes)
-    ! INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
     TYPE (vsl_stream_state) :: VSLstream
 
 
@@ -2061,7 +2031,6 @@ CONTAINS
 
     INTEGER :: i, k, T, Ny, Nslopes, offset, these
     DOUBLE PRECISION :: h(Ny,0:T), hshock(Ny,T), SVol(Ny,0:T), y(Ny,T), resid(Ny,T), hrho(Ny), hInno(Ny), hbar(Ny), E0h(Ny), V0h(Ny), shockslopes(Nslopes)
-    ! INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
     TYPE (vsl_stream_state) :: VSLstream
 
 
@@ -2108,7 +2077,6 @@ CONTAINS
 
     INTEGER :: i, s, j, k, T, Nsv, Nslopes, offset, these, errcode
     DOUBLE PRECISION :: E0slopes(Nslopes), iV0slopes(Nslopes, Nslopes), sqrtVhshock(Nsv,Nsv), Eh0(Nsv), sqrtVh0(Nsv,Nsv), shockslopes(Nslopes)
-    ! INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
     TYPE (vsl_stream_state) :: VSLstream
 
     ! KSC mixture
@@ -2247,7 +2215,6 @@ CONTAINS
 
     INTEGER :: i, s, j, k, T, Nsv, Nslopes, offset, these, errcode
     DOUBLE PRECISION :: E0slopes(Nslopes), iV0slopes(Nslopes, Nslopes), sqrtVhshock(Nsv,Nsv), Eh0(Nsv), sqrtVh0(Nsv,Nsv), shockslopes(Nslopes)
-    ! INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
     TYPE (vsl_stream_state) :: VSLstream
 
     ! KSC mixture
@@ -2369,7 +2336,6 @@ CONTAINS
 
     INTEGER :: i, s, j, k, T, Nsv, Nslopes, offset, these, errcode
     DOUBLE PRECISION :: E0slopes(Nslopes), iV0slopes(Nslopes, Nslopes), sqrtVhshock(Nsv,Nsv), Eh0(Nsv), sqrtVh0(Nsv,Nsv), shockslopes(Nslopes)
-    ! INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
     TYPE (vsl_stream_state) :: VSLstream
 
     ! KSC mixture
@@ -2517,7 +2483,6 @@ CONTAINS
 
 
     DOUBLE PRECISION :: E0slopes(Nslopes), iV0slopes(Nslopes, Nslopes), sqrtVhshock(Nsv,Nsv), Eh0(Nsv), sqrtVh0(Nsv,Nsv), shockslopes(Nslopes)
-    ! INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
     TYPE (vsl_stream_state) :: VSLstream
 
     ! KSC mixture
@@ -2854,7 +2819,6 @@ CONTAINS
     INTEGER :: i, s, j, k, T, Nsv, Nslopes, offset, these, errcode
     DOUBLE PRECISION :: rho(Nsv)
     DOUBLE PRECISION :: E0slopes(Nslopes), iV0slopes(Nslopes, Nslopes), sqrtVhshock(Nsv,Nsv), Eh0(Nsv), sqrtVh0(Nsv,Nsv), shockslopes(Nslopes)
-    ! INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
     TYPE (vsl_stream_state) :: VSLstream
 
     ! KSC mixture
@@ -3009,7 +2973,6 @@ CONTAINS
 
     INTEGER :: i, s, j, k, T, Nsv, Nslopes, offset, these, errcode
     DOUBLE PRECISION :: sqrtVhshock(Nsv,Nsv), Eh0(Nsv), sqrtVh0(Nsv,Nsv), shockslopes(Nslopes)
-    ! INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
     TYPE (vsl_stream_state) :: VSLstream
 
     ! KSC mixture
@@ -3163,7 +3126,6 @@ CONTAINS
     DOUBLE PRECISION :: V0i, Vi
     DOUBLE PRECISION ::    b, b0, bdraw, edraw(1)
     DOUBLE PRECISION :: h, y(T), x(T)
-    ! INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
     TYPE (vsl_stream_state) :: VSLstream
 
 
@@ -3202,7 +3164,6 @@ CONTAINS
     DOUBLE PRECISION :: variancedraw, sigmaT0, sigmaT
     DOUBLE PRECISION :: z(1+T+dof0)
     DOUBLE PRECISION :: y(T), x(T), sxx2
-    ! INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
     TYPE (vsl_stream_state) :: VSLstream
 
 
@@ -3247,7 +3208,6 @@ CONTAINS
     DOUBLE PRECISION, DIMENSION(Nx,Nx) :: V0i, Vi
     DOUBLE PRECISION, DIMENSION(Nx) ::    b, b0, bdraw
     DOUBLE PRECISION :: h, y(T), X(T,Nx)
-    ! INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
     TYPE (vsl_stream_state) :: VSLstream
 
 
@@ -3306,7 +3266,6 @@ CONTAINS
     DOUBLE PRECISION, DIMENSION(Nx,Nx) :: Vi
     DOUBLE PRECISION, DIMENSION(Nx) ::    b, bdraw
     DOUBLE PRECISION :: h, y(T), X(T,Nx)
-    ! INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
     TYPE (vsl_stream_state) :: VSLstream
 
 
@@ -3358,7 +3317,6 @@ CONTAINS
     DOUBLE PRECISION, DIMENSION(N,N) :: rhoV0i, rhoVi, sqrtVshock, H, Hchol, XX
     DOUBLE PRECISION, DIMENSION(N) ::   rho, rhodraw, rho0
     DOUBLE PRECISION, DIMENSION(N,T) :: y, ylag, ytilde
-    ! INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
     TYPE (vsl_stream_state) :: VSLstream
 
     ! NOTE: sqrtVshock is assumed to be UPPER triangular-right Choleski
@@ -3480,7 +3438,6 @@ CONTAINS
     DOUBLE PRECISION, DIMENSION(Ny * Ny * p,Ny * Ny * p) :: V0i, Vi
     DOUBLE PRECISION, DIMENSION(Ny * Ny * p) ::    b, b0, bdraw
     DOUBLE PRECISION :: iSigmaResid(Ny,Ny), Y(T,Ny), ebar(T,Ny), Ydata(-(p-1):T,Ny), X(T,Ny * p), XX(Ny * p, Ny * p), Xy(Ny * p, Ny), tmp(Ny * p, Ny)
-    ! INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
     TYPE (vsl_stream_state) :: VSLstream
 
     ! STEP 1: construct regressors
@@ -3576,7 +3533,6 @@ CONTAINS
     DOUBLE PRECISION, DIMENSION(Ny * Ny * p) ::    b, b0, bdraw
     DOUBLE PRECISION :: iSigmaResid(Ny,Ny,T), Y(T,Ny), Ytilde(T,Ny), Ydata(-(p-1):T,Ny), X(T,Ny * p), XX(Ny * p, Ny * p), XY(Ny * p, Ny)
     DOUBLE PRECISION :: ebar(T,Ny)
-    ! INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
     TYPE (vsl_stream_state) :: VSLstream
 
     ! STEP 1: construct regressors
@@ -3676,7 +3632,6 @@ CONTAINS
     DOUBLE PRECISION, DIMENSION(Ny * Ny * p,Ny * Ny * p) :: V0i, Vi
     DOUBLE PRECISION, DIMENSION(Ny * Ny * p) ::    b, b0, bdraw
     DOUBLE PRECISION :: iSigmaResid(Ny,Ny), Y(T,Ny), Ydata(-(p-1):T,Ny), X(T,Ny * p), XX(Ny * p, Ny * p), Xy(Ny * p, Ny), tmp(Ny * p, Ny)
-    ! INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
     TYPE (vsl_stream_state) :: VSLstream
 
     ! STEP 1: construct regressors
@@ -3766,7 +3721,6 @@ CONTAINS
     DOUBLE PRECISION, DIMENSION(Ny * Ny * p,Ny * Ny * p) :: Vi
     DOUBLE PRECISION, DIMENSION(Ny * Ny * p) ::    b, bdraw
     DOUBLE PRECISION :: iSigmaResid(Ny,Ny), Y(T,Ny), Ydata(-(p-1):T,Ny), X(T,Ny * p), XX(Ny * p, Ny * p), Xy(Ny * p, Ny), tmp(Ny * p, Ny)
-    ! INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
     TYPE (vsl_stream_state) :: VSLstream
 
     ! STEP 1: construct regressors
@@ -3861,7 +3815,6 @@ CONTAINS
     DOUBLE PRECISION, DIMENSION(Ny * Ny * p) ::    b, b0, bdraw
     DOUBLE PRECISION :: iSigmaResid(Ny,Ny), Y(T,Ny), Ydata(-(p-1):T,Ny), X(T,Ny * p), XX(Ny * p, Ny * p), Xy(Ny * p, Ny), tmp(Ny * p, Ny)
     DOUBLE PRECISION :: scaleSV(T)
-    ! INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
     TYPE (vsl_stream_state) :: VSLstream
 
     ! STEP 1: construct regressors
@@ -3959,7 +3912,6 @@ CONTAINS
     DOUBLE PRECISION, DIMENSION(Ny * Ny * p,Ny * Ny * p) :: V0i, Vi
     DOUBLE PRECISION, DIMENSION(Ny * Ny * p) ::    b, b0, bdraw
     DOUBLE PRECISION :: iSigmaResid(Ny,Ny,T), Y(T,Ny), Ytilde(T,Ny), Ydata(-(p-1):T,Ny), X(T,Ny * p), XX(Ny * p, Ny * p), XY(Ny * p, Ny)
-    ! INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
     TYPE (vsl_stream_state) :: VSLstream
 
     ! STEP 1: construct regressors
@@ -4067,7 +4019,6 @@ CONTAINS
     DOUBLE PRECISION, DIMENSION(Ny * Ny * p,Ny * Ny * p) :: Vi
     DOUBLE PRECISION, DIMENSION(Ny * Ny * p) ::    b, bdraw
     DOUBLE PRECISION :: iSigmaResid(Ny,Ny,T), Y(T,Ny), Ytilde(T,Ny), Ydata(-(p-1):T,Ny), X(T,Ny * p), XX(Ny * p, Ny * p), XY(Ny * p, Ny)
-    ! INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
     TYPE (vsl_stream_state) :: VSLstream
 
     ! STEP 1: construct regressors
@@ -4170,7 +4121,6 @@ CONTAINS
     DOUBLE PRECISION, DIMENSION(Ny * (Ny * p + 1),Ny * (Ny * p + 1)) :: V0i, Vi
     DOUBLE PRECISION, DIMENSION(Ny * (Ny * p + 1)) ::    b, b0, bdraw
     DOUBLE PRECISION :: iSigmaResid(Ny,Ny,T), Y(T,Ny), Ytilde(T,Ny), Ydata(-(p-1):T,Ny), X(T,Ny * p + 1), XX(Ny * p + 1, Ny * p + 1), XY(Ny * p + 1, Ny)
-    ! INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
     TYPE (vsl_stream_state) :: VSLstream
 
     ! STEP 1: construct regressors
@@ -4277,7 +4227,6 @@ CONTAINS
     DOUBLE PRECISION, DIMENSION(Ny * (Ny * p + Nz)) ::    b, b0, bdraw
     DOUBLE PRECISION :: iSigmaResid(Ny,Ny,T), Y(T,Ny), Ytilde(T,Ny), Ydata(-(p-1):T,Ny), X(T,Ny * p + Nz), XX(Ny * p + Nz, Ny * p + Nz), XY(Ny * p + Nz, Ny)
     DOUBLE PRECISION :: Z(T,Nz) ! note: length T, not Tdata
-    ! INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
     TYPE (vsl_stream_state) :: VSLstream
 
     ! STEP 1: construct regressors
@@ -4394,7 +4343,6 @@ CONTAINS
     INTEGER :: Nb, status, j
 
     DOUBLE PRECISION :: Ytilde(T,Ny), XX(Nx,Nx), XY(Nx, Ny)
-    ! INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
     TYPE (vsl_stream_state), INTENT(INOUT) :: VSLstream
 
     ! STEP 1: construct regressors
@@ -4489,7 +4437,6 @@ CONTAINS
     INTEGER :: i, jj, kk
     INTEGER :: ndx(Nx)
 
-    ! INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
     TYPE (vsl_stream_state), INTENT(INOUT) :: VSLstream
 
 
@@ -4567,7 +4514,6 @@ CONTAINS
     INTEGER :: j, jj, kk
     INTEGER :: ndx(Nx)
 
-    ! INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
     TYPE (vsl_stream_state), INTENT(INOUT) :: VSLstream
 
 
@@ -4676,7 +4622,6 @@ CONTAINS
     INTEGER :: j, kk, ii
     INTEGER :: errcode
 
-    ! INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
     TYPE (vsl_stream_state), INTENT(INOUT) :: VSLstream
 
     ! init output
@@ -4784,7 +4729,6 @@ CONTAINS
     INTEGER :: j, kk, ii
     INTEGER :: errcode
 
-    ! INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
     TYPE (vsl_stream_state), INTENT(INOUT) :: VSLstream
 
     ! init output
@@ -4935,7 +4879,6 @@ CONTAINS
 
     INTEGER :: Ny, p, Ndraws, Nx, errcode, j, Nf
     DOUBLE PRECISION  :: maxlambdas(Ndraws), kompanion(Ny * p, Ny * p), f(Ny * Ny * p,Ndraws), f0(Ny * Ny * p), sqrtVf0(Ny * Ny * p, Ny * Ny * p)
-    ! INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
     type (vsl_stream_state) :: VSLstream
 
 
@@ -4989,7 +4932,6 @@ CONTAINS
 
     INTEGER :: errcode
 
-    ! INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
     type (vsl_stream_state) :: VSLstream
 
     IF (PRESENT(ischol)) THEN
@@ -5060,7 +5002,6 @@ CONTAINS
 
     INTEGER :: n, errcode
 
-    ! INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
     type (vsl_stream_state) :: VSLstream
 
     IF (PRESENT(ischol)) THEN
@@ -5137,7 +5078,6 @@ CONTAINS
 
     INTEGER :: n, errcode
 
-    ! INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
     type (vsl_stream_state) :: VSLstream
 
     IF (PRESENT(ischol)) THEN

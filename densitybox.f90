@@ -135,7 +135,6 @@ CONTAINS
     INTEGER :: ii
 
     type (vsl_stream_state) :: VSLstream
-    ! ! INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
 
 
     ! init
@@ -175,7 +174,6 @@ CONTAINS
 
     type (vsl_stream_state) :: VSLstream
     integer :: errcode
-    ! INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
 
 
     ! init
@@ -227,7 +225,6 @@ CONTAINS
 
     type (vsl_stream_state) :: VSLstream
     integer :: errcode
-    ! INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
 
 
     ! init
@@ -287,7 +284,6 @@ CONTAINS
 
     type (vsl_stream_state) :: VSLstream
     integer :: errcode
-    ! INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
 
 
     ! init
@@ -348,7 +344,6 @@ CONTAINS
 
     type (vsl_stream_state) :: VSLstream
     integer :: errcode
-    ! INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
 
 
     ! init
@@ -424,7 +419,6 @@ CONTAINS
 
     type (vsl_stream_state) :: VSLstream
     integer :: errcode
-    ! ! ! INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
 
 
     ! init
@@ -481,7 +475,6 @@ CONTAINS
 
     type (vsl_stream_state) :: VSLstream
     integer :: errcode
-    ! INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
 
 
     ! init
@@ -556,7 +549,6 @@ CONTAINS
 
     type (vsl_stream_state) :: VSLstream
     integer :: errcode
-    ! INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
 
 
     ! init
@@ -680,7 +672,6 @@ CONTAINS
 
     type (vsl_stream_state) :: VSLstream
     integer :: errcode
-    ! INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
 
 
     ! init
@@ -1290,7 +1281,6 @@ CONTAINS
 
     ! VSL
     INTEGER :: errcode
-    ! INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
     type (vsl_stream_state), intent(inout) :: VSLstream
 
     ! sample
@@ -1335,7 +1325,6 @@ CONTAINS
 
   !   ! VSL
   !   INTEGER :: errcode
-  !   ! INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
   !   type (vsl_stream_state), intent(inout) :: VSLstream
 
   !   ! init
@@ -1460,7 +1449,6 @@ CONTAINS
 
     ! VSL
     INTEGER :: errcode
-    ! INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
     type (vsl_stream_state), intent(inout) :: VSLstream
 
     ! logical :: debugflag 
@@ -1566,7 +1554,6 @@ CONTAINS
     ! VSL
     TYPE (VSL_STREAM_STATE) :: VSLstream
     INTEGER :: errcode
-    ! INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
 
 
     errcode = vdrnggaussian(VSLmethodGaussian, VSLstream, 2 * (alpha + beta), z, 0.0d0, 1.0d0) 
