@@ -650,7 +650,7 @@ CONTAINS
     ! draws a random permutation of integers 1:NN
     ! adapted from https://programming-idioms.org/idiom/10/shuffle-a-list/3147/fortran
 
-    type (vsl_stream_state), intent(in) :: VSLstream
+    type (vsl_stream_state), intent(inout) :: VSLstream
 
     integer,intent(in)    :: NN
     integer               :: ndx(NN)
