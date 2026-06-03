@@ -803,7 +803,7 @@ CONTAINS
     ! order draws
     CALL dlasrt('I', Ndraws, X, status)
     IF (status /= 0) THEN
-       write (*,*), 'DLASORT ERROR ', status, ' [COMPUTE CRPS]'
+       write (*,*) 'DLASORT ERROR ', status, ' [COMPUTE CRPS]'
        stop 1
     END IF
 
@@ -1165,7 +1165,7 @@ CONTAINS
     ! sqrtVtheta
     call DPOTRF('l', Ntheta, Vtheta, Ntheta, status)
     if (status /= 0) then
-       write (*,*), 'DPOTRF ERROR ', status, ' [COMPUTE GEWEKE MDD]'
+       write (*,*) 'DPOTRF ERROR ', status, ' [COMPUTE GEWEKE MDD]'
        stop 1
     END IF
 

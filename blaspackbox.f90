@@ -40,7 +40,7 @@ CONTAINS
     call DSYRK('u','t',Nvar,Nobs,1.0d0 / dble(Nobs),resid,Nobs,0.0d0,S,Nvar)
     call DPOTRF('u', Nvar, S, Nvar, status)
     if (status /= 0) then
-       write (*,*), 'DPOTRF ERROR ', status, ' [SQRTVCV]'
+       write (*,*) 'DPOTRF ERROR ', status, ' [SQRTVCV]'
        stop 1
     END IF
 
@@ -63,7 +63,7 @@ CONTAINS
     call DSYRK('u','n',Nvar,Nobs,1.0d0 / dble(Nobs),resid,Nvar,0.0d0,S,Nvar)
     call DPOTRF('u', Nvar, S, Nvar, status)
     if (status /= 0) then
-       write (*,*), 'DPOTRF ERROR ', status, ' [SQRTVCVTR]'
+       write (*,*) 'DPOTRF ERROR ', status, ' [SQRTVCVTR]'
        stop 1
     END IF
 
