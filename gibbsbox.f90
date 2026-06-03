@@ -3366,212 +3366,212 @@ CONTAINS
   END SUBROUTINE simPriorMaxroot
 
 
-  ! @\newpage\subsection{NormalGammaDraw (single draw)}@
-  SUBROUTINE normalgammadraw(Nbeta, beta, sigma, Ebeta, invVbeta, ssr, dof, VSLstream, ischol)
+!  ! @\newpage\subsection{NormalGammaDraw (single draw)}@
+!  SUBROUTINE normalgammadraw(Nbeta, beta, sigma, Ebeta, invVbeta, ssr, dof, VSLstream, ischol)
+!
+!    ! draw parameters beta and invsigma2 from normal-gamma
+!    ! sigma is 1 / (sqrt(Gamma(ssr/2, dof/2))
+!    ! beta | sigma is N(Ebeta, (invVbeta)^(-1) * sigma^2)
+!
+!    ! as usual, invVbeta is supposed to be stored in right-upper format
+!
+!    INTENT(IN)    :: Nbeta, Ebeta, invVbeta, ssr, dof
+!    INTENT(OUT)   :: beta, sigma
+!    INTENT(INOUT) :: VSLstream
+!    LOGICAL, INTENT(IN), OPTIONAL :: ischol
+!
+!    INTEGER :: Nbeta
+!    INTEGER :: dof ! in principle: could also be REAL, but keeping with rest of code, assume integer valued Nobs
+!    DOUBLE PRECISION :: Ebeta(Nbeta), invVbeta(Nbeta,Nbeta), cholinvVbeta(Nbeta,Nbeta)
+!    DOUBLE PRECISION :: beta(Nbeta), sigma(1)
+!    DOUBLE PRECISION :: ssr
+!
+!    logical :: dochol
+!
+!    INTEGER :: errcode
+!
+!    INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
+!    type (vsl_stream_state) :: VSLstream
+!
+!    IF (PRESENT(ischol)) THEN
+!       dochol = .NOT. ischol
+!    ELSE
+!       dochol = .true.
+!    END IF
+!
+!    ! draw invsigma2 from gamma
+!    errcode = vdrnggamma(VSL_RNG_METHOD_GAMMA_GNORM_ACCURATE, VSLstream, 1, sigma, dble(dof - 1) * 0.5d0, 0.0d0, 2.0d0 / ssr)
+!    ! Notes:
+!    ! - ifort uses inverse of "beta" as used in wiki notation
+!    ! - "alpha" corresponds to (dof-1) / 2
+!    if (errcode /= 0) then
+!       write(*,*) 'vdrnggamma error: ', errcode, ' [NORMALGAMMADRAWS]'
+!       stop 1
+!    end if
+!
+!    ! convert gamma-draws into sigma 
+!    sigma = 1.0d0 / sqrt(sigma) 
+!
+!    ! draw standard-normals for beta
+!    errcode = vdrnggaussian(VSLmethodGaussian, VSLstream, Nbeta, beta, 0.0d0, 1.0d0)
+!    ! - scale beta by inv(chol(invVbeta))
+!    ! - choleski of invVbet
+!    cholinvVbeta = invVbeta
+!    if (dochol) then
+!       call dpotrf('u', Nbeta, cholinvVbeta, Nbeta, errcode)
+!       if (errcode /= 0) then
+!          write(*,*) 'CHOLESKI ERROR:', errcode, ' [NormalGammaDraws]'
+!          stop 1
+!       end if
+!    end if
+!    ! call savevec(beta,'zdraw.debug')
+!    ! - solve for beta: cholinvVbeta * beta = z
+!    call DTRSV('U','N','N',Nbeta,cholinvVbeta,Nbeta,beta,1) ! Note: no transpose since using right-choleski factor of invVbeta
+!    ! call savemat(cholinvVbeta,'cholinvVbeta.debug')
+!    ! call savevec(beta,'beta.debug')
+!    ! stop 12
+!    ! add mean and scale by sigma
+!    beta = Ebeta + sigma * beta
+!
+!  END SUBROUTINE normalgammadraw
 
-    ! draw parameters beta and invsigma2 from normal-gamma
-    ! sigma is 1 / (sqrt(Gamma(ssr/2, dof/2))
-    ! beta | sigma is N(Ebeta, (invVbeta)^(-1) * sigma^2)
+!  ! @\newpage\subsection{NormalGammaDraws -- vector draw}@
+!  SUBROUTINE normalgammadraws(Nbeta, Ndraw, beta, sigma, Ebeta, invVbeta, ssr, dof, VSLstream, ischol)
+!
+!    ! Ndraws from normalgamma; with Ndraws different parameters (except dof)
+!
+!    ! draw parameters beta and invsigma2 from normal-gamma
+!    ! sigma is 1 / (sqrt(Gamma(ssr/2, dof/2))
+!    ! beta | sigma is N(Ebeta, (invVbeta)^(-1) * sigma^2)
+!
+!    ! as usual, invVbeta is supposed to be stored in right-upper format
+!
+!    INTENT(IN)    :: Nbeta, Ndraw, Ebeta, invVbeta, ssr, dof
+!    INTENT(OUT)   :: beta, sigma
+!    INTENT(INOUT) :: VSLstream
+!    LOGICAL, INTENT(IN), OPTIONAL :: ischol
+!
+!    INTEGER :: Nbeta, Ndraw
+!    INTEGER :: dof ! in principle: could also be REAL, but keeping with rest of code, assume integer valued Nobs
+!    DOUBLE PRECISION :: Ebeta(Nbeta,Ndraw), invVbeta(Nbeta,Nbeta,Ndraw), cholinvVbeta(Nbeta,Nbeta)
+!    DOUBLE PRECISION :: beta(Nbeta,Ndraw), sigma(Ndraw)
+!    DOUBLE PRECISION :: ssr(Ndraw)
+!
+!    logical :: dochol
+!
+!    INTEGER :: n, errcode
+!
+!    INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
+!    type (vsl_stream_state) :: VSLstream
+!
+!    IF (PRESENT(ischol)) THEN
+!       dochol = .NOT. ischol
+!    ELSE
+!       dochol = .true.
+!    END IF
+!
+!    ! draw invsigma2 from gamma -- exploiting scalability property
+!    errcode = vdrnggamma(VSL_RNG_METHOD_GAMMA_GNORM_ACCURATE, VSLstream, Ndraw, sigma, dble(dof - 1) * 0.5d0, 0.0d0, 1.0d0)
+!    sigma = sigma * 2.0d0 / ssr
+!
+!    ! Notes:
+!    ! - ifort uses inverse of "beta" as used in wiki notation (i.e. "theta" in wikipedia)
+!    ! - "alpha" corresponds to (dof-1) / 2
+!    if (errcode /= 0) then
+!       write(*,*) 'vdrnggamma error: ', errcode, ' [NORMALGAMMADRAWS]'
+!       stop 1
+!    end if
+!
+!    ! convert gamma-draws into sigma 
+!    sigma = 1.0d0 / sqrt(sigma) 
+!
+!    ! draw beta
+!    errcode = vdrnggaussian(VSLmethodGaussian, VSLstream, Nbeta * Ndraw, beta, 0.0d0, 1.0d0)
+!
+!    !$OMP PARALLEL DO SHARED(invVbeta,Ndraw,Nbeta,dochol,beta) PRIVATE(cholinvVbeta, errcode) DEFAULT(NONE) SCHEDULE(STATIC)
+!    do n=1,Ndraw
+!       ! scale beta by inv(chol(invVbeta))
+!       ! - choleski of invVbet
+!       cholinvVbeta = invVbeta(:,:,n)
+!       if (dochol) then
+!          call dpotrf('u', Nbeta, cholinvVbeta, Nbeta, errcode)
+!          if (errcode /= 0) then
+!             write(*,*) 'CHOLESKI ERROR:', errcode, ' [NormalGammaDraws]'
+!             stop 1
+!          end if
+!       end if
+!
+!       ! - solve for beta: cholinvVbeta * beta = z
+!       call DTRSV('U','N','N',Nbeta,cholinvVbeta,Nbeta,beta(:,n),1) ! Note: no transpose
+!
+!    end do
+!    !$OMP END PARALLEL DO 
+!
+!    ! add mean and scale by sigma
+!    forall (n=1:Ndraw) beta(:,n) = Ebeta(:,n) + sigma(n) * beta(:,n)     
+!
+!  END SUBROUTINE normalgammadraws
 
-    ! as usual, invVbeta is supposed to be stored in right-upper format
-
-    INTENT(IN)    :: Nbeta, Ebeta, invVbeta, ssr, dof
-    INTENT(OUT)   :: beta, sigma
-    INTENT(INOUT) :: VSLstream
-    LOGICAL, INTENT(IN), OPTIONAL :: ischol
-
-    INTEGER :: Nbeta
-    INTEGER :: dof ! in principle: could also be REAL, but keeping with rest of code, assume integer valued Nobs
-    DOUBLE PRECISION :: Ebeta(Nbeta), invVbeta(Nbeta,Nbeta), cholinvVbeta(Nbeta,Nbeta)
-    DOUBLE PRECISION :: beta(Nbeta), sigma(1)
-    DOUBLE PRECISION :: ssr
-
-    logical :: dochol
-
-    INTEGER :: errcode
-
-    INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
-    type (vsl_stream_state) :: VSLstream
-
-    IF (PRESENT(ischol)) THEN
-       dochol = .NOT. ischol
-    ELSE
-       dochol = .true.
-    END IF
-
-    ! draw invsigma2 from gamma
-    errcode = vdrnggamma(VSL_RNG_METHOD_GAMMA_GNORM_ACCURATE, VSLstream, 1, sigma, dble(dof - 1) * 0.5d0, 0.0d0, 2.0d0 / ssr)
-    ! Notes:
-    ! - ifort uses inverse of "beta" as used in wiki notation
-    ! - "alpha" corresponds to (dof-1) / 2
-    if (errcode /= 0) then
-       write(*,*) 'vdrnggamma error: ', errcode, ' [NORMALGAMMADRAWS]'
-       stop 1
-    end if
-
-    ! convert gamma-draws into sigma 
-    sigma = 1.0d0 / sqrt(sigma) 
-
-    ! draw standard-normals for beta
-    errcode = vdrnggaussian(VSLmethodGaussian, VSLstream, Nbeta, beta, 0.0d0, 1.0d0)
-    ! - scale beta by inv(chol(invVbeta))
-    ! - choleski of invVbet
-    cholinvVbeta = invVbeta
-    if (dochol) then
-       call dpotrf('u', Nbeta, cholinvVbeta, Nbeta, errcode)
-       if (errcode /= 0) then
-          write(*,*) 'CHOLESKI ERROR:', errcode, ' [NormalGammaDraws]'
-          stop 1
-       end if
-    end if
-    ! call savevec(beta,'zdraw.debug')
-    ! - solve for beta: cholinvVbeta * beta = z
-    call DTRSV('U','N','N',Nbeta,cholinvVbeta,Nbeta,beta,1) ! Note: no transpose since using right-choleski factor of invVbeta
-    ! call savemat(cholinvVbeta,'cholinvVbeta.debug')
-    ! call savevec(beta,'beta.debug')
-    ! stop 12
-    ! add mean and scale by sigma
-    beta = Ebeta + sigma * beta
-
-  END SUBROUTINE normalgammadraw
-
-  ! @\newpage\subsection{NormalGammaDraws -- vector draw}@
-  SUBROUTINE normalgammadraws(Nbeta, Ndraw, beta, sigma, Ebeta, invVbeta, ssr, dof, VSLstream, ischol)
-
-    ! Ndraws from normalgamma; with Ndraws different parameters (except dof)
-
-    ! draw parameters beta and invsigma2 from normal-gamma
-    ! sigma is 1 / (sqrt(Gamma(ssr/2, dof/2))
-    ! beta | sigma is N(Ebeta, (invVbeta)^(-1) * sigma^2)
-
-    ! as usual, invVbeta is supposed to be stored in right-upper format
-
-    INTENT(IN)    :: Nbeta, Ndraw, Ebeta, invVbeta, ssr, dof
-    INTENT(OUT)   :: beta, sigma
-    INTENT(INOUT) :: VSLstream
-    LOGICAL, INTENT(IN), OPTIONAL :: ischol
-
-    INTEGER :: Nbeta, Ndraw
-    INTEGER :: dof ! in principle: could also be REAL, but keeping with rest of code, assume integer valued Nobs
-    DOUBLE PRECISION :: Ebeta(Nbeta,Ndraw), invVbeta(Nbeta,Nbeta,Ndraw), cholinvVbeta(Nbeta,Nbeta)
-    DOUBLE PRECISION :: beta(Nbeta,Ndraw), sigma(Ndraw)
-    DOUBLE PRECISION :: ssr(Ndraw)
-
-    logical :: dochol
-
-    INTEGER :: n, errcode
-
-    INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
-    type (vsl_stream_state) :: VSLstream
-
-    IF (PRESENT(ischol)) THEN
-       dochol = .NOT. ischol
-    ELSE
-       dochol = .true.
-    END IF
-
-    ! draw invsigma2 from gamma -- exploiting scalability property
-    errcode = vdrnggamma(VSL_RNG_METHOD_GAMMA_GNORM_ACCURATE, VSLstream, Ndraw, sigma, dble(dof - 1) * 0.5d0, 0.0d0, 1.0d0)
-    sigma = sigma * 2.0d0 / ssr
-
-    ! Notes:
-    ! - ifort uses inverse of "beta" as used in wiki notation (i.e. "theta" in wikipedia)
-    ! - "alpha" corresponds to (dof-1) / 2
-    if (errcode /= 0) then
-       write(*,*) 'vdrnggamma error: ', errcode, ' [NORMALGAMMADRAWS]'
-       stop 1
-    end if
-
-    ! convert gamma-draws into sigma 
-    sigma = 1.0d0 / sqrt(sigma) 
-
-    ! draw beta
-    errcode = vdrnggaussian(VSLmethodGaussian, VSLstream, Nbeta * Ndraw, beta, 0.0d0, 1.0d0)
-
-    !$OMP PARALLEL DO SHARED(invVbeta,Ndraw,Nbeta,dochol,beta) PRIVATE(cholinvVbeta, errcode) DEFAULT(NONE) SCHEDULE(STATIC)
-    do n=1,Ndraw
-       ! scale beta by inv(chol(invVbeta))
-       ! - choleski of invVbet
-       cholinvVbeta = invVbeta(:,:,n)
-       if (dochol) then
-          call dpotrf('u', Nbeta, cholinvVbeta, Nbeta, errcode)
-          if (errcode /= 0) then
-             write(*,*) 'CHOLESKI ERROR:', errcode, ' [NormalGammaDraws]'
-             stop 1
-          end if
-       end if
-
-       ! - solve for beta: cholinvVbeta * beta = z
-       call DTRSV('U','N','N',Nbeta,cholinvVbeta,Nbeta,beta(:,n),1) ! Note: no transpose
-
-    end do
-    !$OMP END PARALLEL DO 
-
-    ! add mean and scale by sigma
-    forall (n=1:Ndraw) beta(:,n) = Ebeta(:,n) + sigma(n) * beta(:,n)     
-
-  END SUBROUTINE normalgammadraws
-
-  ! @\newpage\subsection{NormalGammaDrawsUnivariate}@
-  SUBROUTINE normalgammadrawsunivariate(Ndraw, beta, sigma, Ebeta, invVbeta, ssr, dof, VSLstream, ischol)
-
-    ! Ndraws from normalgamma; with Ndraws different parameters (except dof)
-
-    ! draw parameters beta and invsigma2 from normal-gamma
-    ! sigma is 1 / (sqrt(Gamma(ssr/2, dof/2))
-    ! beta | sigma is N(Ebeta, (invVbeta)^(-1) * sigma^2)
-
-    ! as usual, invVbeta is supposed to be stored in right-upper format
-
-    INTENT(IN)    :: Ndraw, Ebeta, invVbeta, ssr, dof
-    INTENT(OUT)   :: beta, sigma
-    INTENT(INOUT) :: VSLstream
-    LOGICAL, INTENT(IN), OPTIONAL :: ischol
-
-    INTEGER :: Ndraw
-    INTEGER :: dof ! in principle: could also be REAL, but keeping with rest of code, assume integer valued Nobs
-    DOUBLE PRECISION :: Ebeta(Ndraw), invVbeta(Ndraw), sqrtVbeta(Ndraw)
-    DOUBLE PRECISION :: beta(Ndraw), sigma(Ndraw)
-    DOUBLE PRECISION :: ssr(Ndraw)
-
-    logical :: dochol
-
-    INTEGER :: n, errcode
-
-    INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
-    type (vsl_stream_state) :: VSLstream
-
-    IF (PRESENT(ischol)) THEN
-       dochol = .NOT. ischol
-    ELSE
-       dochol = .true.
-    END IF
-
-    ! draw invsigma2 from gamma -- exploiting scalability property
-    errcode = vdrnggamma(VSL_RNG_METHOD_GAMMA_GNORM_ACCURATE, VSLstream, Ndraw, sigma, dble(dof - 1) * 0.5d0, 0.0d0, 1.0d0)
-    sigma = sigma * 2.0d0 / ssr
-
-    ! Notes:
-    ! - ifort uses inverse of "beta" as used in wiki notation (i.e. "theta" in wikipedia)
-    ! - "alpha" corresponds to (dof-1) / 2
-    if (errcode /= 0) then
-       write(*,*) 'vdrnggamma error: ', errcode, ' [NORMALGAMMADRAWS]'
-       stop 1
-    end if
-
-    ! convert gamma-draws into sigma 
-    sigma = 1.0d0 / sqrt(sigma) 
-
-    ! draw beta
-    sqrtVbeta = 1.0d0 / invVbeta
-    if (doChol) then
-       sqrtVbeta = sqrt(sqrtVbeta)
-    end if
-    errcode = vdrnggaussian(VSLmethodGaussian, VSLstream, Ndraw, beta, 0.0d0, 1.0d0)
-    ! add mean and scale by sigma
-    forall (n=1:Ndraw) beta(n) = Ebeta(n) + sigma(n) * sqrtVbeta(N) * beta(n)     
-
-  END SUBROUTINE normalgammadrawsunivariate
+!  ! @\newpage\subsection{NormalGammaDrawsUnivariate}@
+!  SUBROUTINE normalgammadrawsunivariate(Ndraw, beta, sigma, Ebeta, invVbeta, ssr, dof, VSLstream, ischol)
+!
+!    ! Ndraws from normalgamma; with Ndraws different parameters (except dof)
+!
+!    ! draw parameters beta and invsigma2 from normal-gamma
+!    ! sigma is 1 / (sqrt(Gamma(ssr/2, dof/2))
+!    ! beta | sigma is N(Ebeta, (invVbeta)^(-1) * sigma^2)
+!
+!    ! as usual, invVbeta is supposed to be stored in right-upper format
+!
+!    INTENT(IN)    :: Ndraw, Ebeta, invVbeta, ssr, dof
+!    INTENT(OUT)   :: beta, sigma
+!    INTENT(INOUT) :: VSLstream
+!    LOGICAL, INTENT(IN), OPTIONAL :: ischol
+!
+!    INTEGER :: Ndraw
+!    INTEGER :: dof ! in principle: could also be REAL, but keeping with rest of code, assume integer valued Nobs
+!    DOUBLE PRECISION :: Ebeta(Ndraw), invVbeta(Ndraw), sqrtVbeta(Ndraw)
+!    DOUBLE PRECISION :: beta(Ndraw), sigma(Ndraw)
+!    DOUBLE PRECISION :: ssr(Ndraw)
+!
+!    logical :: dochol
+!
+!    INTEGER :: n, errcode
+!
+!    INTEGER, PARAMETER :: VSLmethodGaussian = 0, VSLmethodUniform = 0
+!    type (vsl_stream_state) :: VSLstream
+!
+!    IF (PRESENT(ischol)) THEN
+!       dochol = .NOT. ischol
+!    ELSE
+!       dochol = .true.
+!    END IF
+!
+!    ! draw invsigma2 from gamma -- exploiting scalability property
+!    errcode = vdrnggamma(VSL_RNG_METHOD_GAMMA_GNORM_ACCURATE, VSLstream, Ndraw, sigma, dble(dof - 1) * 0.5d0, 0.0d0, 1.0d0)
+!    sigma = sigma * 2.0d0 / ssr
+!
+!    ! Notes:
+!    ! - ifort uses inverse of "beta" as used in wiki notation (i.e. "theta" in wikipedia)
+!    ! - "alpha" corresponds to (dof-1) / 2
+!    if (errcode /= 0) then
+!       write(*,*) 'vdrnggamma error: ', errcode, ' [NORMALGAMMADRAWS]'
+!       stop 1
+!    end if
+!
+!    ! convert gamma-draws into sigma 
+!    sigma = 1.0d0 / sqrt(sigma) 
+!
+!    ! draw beta
+!    sqrtVbeta = 1.0d0 / invVbeta
+!    if (doChol) then
+!       sqrtVbeta = sqrt(sqrtVbeta)
+!    end if
+!    errcode = vdrnggaussian(VSLmethodGaussian, VSLstream, Ndraw, beta, 0.0d0, 1.0d0)
+!    ! add mean and scale by sigma
+!    forall (n=1:Ndraw) beta(n) = Ebeta(n) + sigma(n) * sqrtVbeta(N) * beta(n)     
+!
+!  END SUBROUTINE normalgammadrawsunivariate
 
   ! @\newpage\subsection{NormalGammaUpdate}@
   SUBROUTINE normalgammaupdate(T, Nx, y, X, b, iV, ssr, dof, updatedof)
