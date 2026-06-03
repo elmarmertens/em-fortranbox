@@ -4471,7 +4471,7 @@ CONTAINS
        forall (kk=1:T,jj=1:Nx) rhs(kk,jj) = X(kk,jj) / SVol(kk,i)
 
        ! index into coefficient vector
-       ndx = (/ (i-1) * Nx + 1 : i * Nx /)
+       ndx = [(kk, kk=(i-1)*Nx+1, i*Nx)]
        call bayesRegressionSlope(thisb, lhs, rhs, Nx, T, 1.0d0, b0(ndx), V0i(ndx,ndx), VSLstream)
 
        ! store results
@@ -4576,7 +4576,7 @@ CONTAINS
        ! call savemat(paidraw, 'paidraw.debug')
 
        ! 4: index into coefficient vector
-       ndx = (/ (j-1) * Nx + 1 : j * Nx /)
+       ndx = [(kk, kk=(j-1)*Nx+1, j*Nx)]
        call bayesRegressionSlope(thisb, lhs(1:Tj), rhs(1:Tj,:), Nx, Tj, 1.0d0, b0(ndx), V0i(ndx,ndx), VSLstream)
 
        ! store results
@@ -5119,6 +5119,9 @@ CONTAINS
 !    forall (n=1:Ndraw) beta(n) = Ebeta(n) + sigma(n) * sqrtVbeta(N) * beta(n)     
 !
 !  END SUBROUTINE normalgammadrawsunivariate
+
+  ! @\newpage\subsection{NormalGammaDraw}@
+  SUBROUTINE normalgammadraw(Nbeta, beta, sigma, Ebeta, invVbeta, ssr, dof, VSLstream, ischol)
 
     INTENT(IN)    :: Nbeta, Ebeta, invVbeta, ssr, dof
     INTENT(OUT)   :: beta, sigma
