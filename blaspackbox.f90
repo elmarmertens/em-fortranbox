@@ -80,11 +80,12 @@ CONTAINS
 
     N = size(S,1)
 
-       DO i=1,N
-          DO j=1,i-1
-             S(i,j) = S(j,i)
-          END DO
+    DO i=2,N ! j=1,N is redundant since inner loop requires i-1 .ge. 1
+       DO j=1,i-1
+          S(i,j) = S(j,i)
        END DO
+    END DO
+
   END SUBROUTINE SYMMETRIC
 
 ! @\newpage\subsection{maxroot}@
@@ -237,6 +238,38 @@ CONTAINS
 
   END SUBROUTINE vectorTimesMatrix
 
+! @\newpage\subsection{ols}@
+  SUBROUTINE ols(b, Nobs, Ny, Nx, Y, X)
+
+    integer, intent(in) :: Nobs, Ny, Nx
+    double precision, intent(out), dimension(Nx,Ny) :: b
+    double precision, intent(in) :: y(Nobs, Ny), x(Nobs, Nx)
+    double precision :: xx(Nx, Nx), xy(Nx,Ny)
+    integer :: errcode
+
+    b = 0.0d0
+    ! X'X
+    XX = 0.0d0 ! to clean out lower triangular part of XX
+    call DSYRK('U','T',Nx,Nobs,1.0d0,X,Nobs,0.0d0,XX,Nx)
+    call DPOTRF('U',Nx,xx,Nx,errcode)
+    if (errcode .ne. 0) then
+       print *,'dpotrf error in ols'
+       stop 1
+    end if
+    
+    ! x'y
+    call DGEMM('t','n',Nx,Ny,Nobs,1.0d0,x,Nobs,y,Nobs,0.0d0,xy,Nx)
+
+    ! solve xx * b = xy for b
+    b = xy
+    call DPOTRS('u', Nx, Ny, xx, Nx, b, Nx, errcode)
+    if (errcode .ne. 0) then
+       print *,'dpotrs error in ols'
+       stop 1
+    end if
+
+  END SUBROUTINE ols
+
 ! @\newpage\subsection{XprimeX}@
   SUBROUTINE XprimeX(XX, X)
 
@@ -299,8 +332,8 @@ CONTAINS
 
 ! @\newpage\subsection{symkronecker}@
   SUBROUTINE symkronecker(alpha,A,Na,B,Nb,beta,C)
-    ! C = kron(A,B) + C
-    ! assumes symmetry A,B and C 
+    ! C = alpha * kron(A,B) + beta * C
+    ! assumes symmetry of A,B and C 
     ! notice: A can be upper triangular, but B must be full storage
 
     INTENT(OUT) :: C
@@ -317,6 +350,22 @@ CONTAINS
 
 
   END SUBROUTINE symkronecker
+
+  ! @\newpage\subsection{kronecker}@
+  SUBROUTINE kronecker(alpha,A,rowsA,colsA,B,rowsB,colsB,beta,C)
+    ! C = alpha * kron(A,B) + beta * C
+
+    INTENT(OUT) :: C
+    INTENT(IN) :: A,rowsA,colsA,B,rowsB,colsB,alpha,beta
+
+    INTEGER :: rowsA,colsA,rowsB,colsB, i, j
+
+    DOUBLE PRECISION :: A(rowsA,colsA), B(rowsB,colsB), C(rowsA * rowsB, colsA * colsB), alpha, beta
+
+    ! loop over rows and columns of A
+    FORALL (i=1:rowsA,j=1:colsA) C((i-1) * rowsB + 1 : i * rowsB, (j-1) * colsB + 1 : j * colsB) = alpha * A(i,j) * B + beta * C((i-1) * rowsB + 1 : i * rowsB, (j-1) * colsB + 1 : j * colsB)
+
+  END SUBROUTINE kronecker
 
 ! @\newpage\subsection{eye}@
   SUBROUTINE eye(I,alpha)

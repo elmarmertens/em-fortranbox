@@ -2,7 +2,8 @@ MODULE embox
 
   USE vslbox
   USE omp_lib
-  
+  USE, INTRINSIC :: IEEE_ARITHMETIC
+
   IMPLICIT NONE
 
 
@@ -10,7 +11,6 @@ MODULE embox
 
   INTEGER, parameter :: Nquantiles = 10
   REAL, DIMENSION(Nquantiles), PARAMETER :: quantilegrid = (/ 0.005, 0.025, 0.05, .1586, .25, .75, .8413, 0.95, 0.975, 0.995 /)
-
 
 CONTAINS
 
@@ -27,7 +27,7 @@ CONTAINS
     INTEGER r,rows, cols
     DOUBLE PRECISION, DIMENSION(rows,cols) :: A
     INTEGER :: nunit
-    
+
     !Open File for reading
     OPEN (newunit=nunit, FILE=filename, STATUS='OLD', ACTION='READ')
     DO r=1,rows
@@ -49,7 +49,7 @@ CONTAINS
     INTEGER j,n
     DOUBLE PRECISION, DIMENSION(n) :: x
     INTEGER :: nunit
-    
+
     !Open File for reading
     OPEN (NEWUNIT=nunit, FILE=filename, STATUS='OLD', ACTION='READ')
     DO j=1,n
@@ -59,7 +59,7 @@ CONTAINS
     CLOSE(UNIT=nunit)
 
   END SUBROUTINE loadarray1
-  
+
   ! @\newpage\subsection{loft}@
   FUNCTION loft(filename)
     INTENT(IN) :: filename
@@ -68,7 +68,7 @@ CONTAINS
     character(len=200) :: filename, dummy
     integer :: loft,status 
     INTEGER :: nunit
-    
+
     open(newunit=nunit,file=filename)
     loft = 0
     do
@@ -91,6 +91,20 @@ CONTAINS
     m = sum(x) / size(x)
 
   END FUNCTION mean
+
+  ! @\newpage\subsection{mean}@
+  PURE FUNCTION nanmean(x) result(m)
+    INTENT(IN) :: x
+
+    double precision, dimension(:) :: x
+    logical, dimension(size(x)) :: nanny
+    double precision :: m
+
+    nanny = .not. isnan(x)
+
+    m = sum(x, mask = nanny) / count(nanny)
+
+  END FUNCTION nanmean
 
   ! @\newpage\subsection{variance}@
   PURE FUNCTION variance(x) result(v)
@@ -301,7 +315,7 @@ CONTAINS
     LOGICAL, INTENT(IN) :: x(:,:)
     INTEGER j
     INTEGER :: nunit
-    
+
     rows = size(x,1)
     cols = size(x,2)
 
@@ -320,7 +334,7 @@ CONTAINS
     DOUBLE PRECISION, INTENT(IN) :: y(:)
     INTEGER j
     INTEGER :: nunit
-    
+
     !Open File for writing
     OPEN (NEWUNIT=nunit, FILE=filename, STATUS='REPLACE', ACTION='WRITE')
     DO j=1,size(y)
@@ -338,7 +352,7 @@ CONTAINS
     DOUBLE PRECISION, INTENT(IN) :: y(:)
     INTEGER j
     INTEGER :: nunit
-    
+
     !Open File for writing
     OPEN (NEWUNIT=nunit, FILE=filename, STATUS='REPLACE', ACTION='WRITE')
     DO j=1,size(y)
@@ -414,7 +428,7 @@ CONTAINS
     INTEGER :: Ndraws, status
     DOUBLE PRECISION, DIMENSION(:) :: x
     DOUBLE PRECISION :: m
-    
+
     Ndraws = size(x)
     CALL dlasrt('I', Ndraws, x, status)
     IF (status /= 0) THEN
@@ -425,7 +439,7 @@ CONTAINS
     m  = x(floor(real(Ndraws) * 0.5))
 
   END FUNCTION median
-  
+
   ! @\newpage\subsection{storeEstimates}@
   SUBROUTINE storeEstimates(theta,Ntheta,Ndraws,filename)
     ! store mean, median and quantiles of draws into file
@@ -516,7 +530,7 @@ CONTAINS
   END SUBROUTINE storeEstimatesTranspose
   ! -----------------------------------------------------------------
 
-    ! @\newpage\subsection{storeMaskedEstimatesTranspose}@
+  ! @\newpage\subsection{storeMaskedEstimatesTranspose}@
   SUBROUTINE storeMaskedEstimatesTranspose(theta,Ntheta,Ndraws,filename,mask)
     ! store mean, median and quantiles of draws into file
     ! transpose version of storeEstimates, theta is Ndraws, Ntheta, but will be stored as Ntheta x 12
@@ -535,12 +549,12 @@ CONTAINS
     ! DOUBLE PRECISION, DIMENSION(Ntheta) :: mittel, median
     DOUBLE PRECISION, DIMENSION(Ntheta,2+Nquantiles) :: outputtable
     DOUBLE PRECISION, ALLOCATABLE, DIMENSION(:) :: maskedslice
-    
+
     CHARACTER (LEN=200) :: filename
 
 
     ! note: the explicit shape arguments Ndraws and Ntheta could be dropped from this subroutine; I have kept them for better comparability with the other routines (and since it helps catching bugs arising from passing badly shaped inputs to the routine)
-    
+
     ! operate on each column of theta separately, since each column may have a different number of elements that satisfy the mask 
 
     ! sort draws
@@ -550,7 +564,7 @@ CONTAINS
        Nslicedraws = count(mask(:,j))
        allocate (maskedslice(Nslicedraws))
        maskedslice = pack(theta(:,j), mask(:,j)) ! works fine using auto-allocate; to be safe, I allocate explicitly, however
-       
+
        ! Nslicedraws = size(maskedslice)
        ! print *, 'Nscliced: ', Nslicedraws
 
@@ -571,12 +585,12 @@ CONTAINS
        forall (n=1:Nquantiles) outputtable(j,2+n) = maskedslice(fracndx(n))
 
        deallocate(maskedslice)
-       
+
     END DO
 
     ! write output table to file
     OPEN (UNIT=4, FILE=filename, STATUS='REPLACE', ACTION='WRITE')
-   WRITE(4,'(ES30.16,ES30.16,ES30.16,ES30.16,ES30.16,ES30.16,ES30.16,ES30.16,ES30.16,ES30.16,ES30.16,ES30.16)') ((outputtable(j,n), n = 1,2+Nquantiles), j=1,Ntheta)
+    WRITE(4,'(ES30.16,ES30.16,ES30.16,ES30.16,ES30.16,ES30.16,ES30.16,ES30.16,ES30.16,ES30.16,ES30.16,ES30.16)') ((outputtable(j,n), n = 1,2+Nquantiles), j=1,Ntheta)
     CLOSE(UNIT=4)
 
   END SUBROUTINE storeMaskedEstimatesTranspose
@@ -630,5 +644,41 @@ CONTAINS
 
   END SUBROUTINE storeEstimatesOMP
   ! -----------------------------------------------------------------
+
+  ! @\newpage\subsection{scramble}@
+  function randperm(NN,VSLstream) result(ndx)
+    ! draws a random permutation of integers 1:NN
+    ! adapted from https://programming-idioms.org/idiom/10/shuffle-a-list/3147/fortran
+
+    type (vsl_stream_state), intent(in) :: VSLstream
+
+    integer,intent(in)    :: NN
+    integer               :: ndx(NN)
+    integer               :: i, j, k
+    integer, parameter    :: one = 1, numloop=2
+    integer               :: temp
+    double precision      :: u(NN*2)
+    INTEGER, PARAMETER    ::  VSLmethodUniform = 0
+    integer               :: errcode
+
+
+    ndx=[(i,i=1,NN)]
+
+    errcode = vdrnguniform(VSLmethodUniform, VSLstream, NN*2, u, 0.0d0, 1.0d0)
+
+    forall(k=1:NN) ndx(k) = k
+
+    do k=1,numloop
+       do i=1,NN
+          ! call random_number(u)
+          j = one + FLOOR((NN+1-one)*u(i + (k-1) * NN))
+          ! switch values
+          temp=ndx(j)
+          ndx(j)=ndx(i)
+          ndx(i)=temp
+       end do
+    end do
+  END FUNCTION randperm
+
 END MODULE embox
 
